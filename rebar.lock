@@ -7,7 +7,7 @@
   0},
  {<<"erldantic">>,
   {git,"https://github.com/andreashasse/erldantic.git",
-       {ref,"7cf59ab09e3380dc9ef8030cc8588ed42a555110"}},
+       {ref,"3214067e9cbf94fefb713de7775438284b710cce"}},
   0},
  {<<"jesse">>,{pkg,<<"jesse">>,<<"1.8.1">>},1},
  {<<"parse_trans">>,{pkg,<<"parse_trans">>,<<"3.4.2">>},1},
