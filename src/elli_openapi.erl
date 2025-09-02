@@ -1,6 +1,6 @@
 -module(elli_openapi).
 
--export([pelle/0, to_endpoint/1, test_pelle2/0, fun2ms_demo/0]).
+-export([pelle/0, to_endpoint/1, test_pelle2/0, fun2ms_demo/0, test_matchspec/0]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -17,9 +17,12 @@ pelle() ->
 
 test_pelle2() ->
     Endpoints =
-        [{get, "/pelle", fun elli_openapi_demo:endpoint/1},
+        [{get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint/1},
          {post, "/pelle", fun elli_openapi_demo:endpoint2/1}],
-    to_endpoints(Endpoints).
+    to_endpoints(Endpoints),
+    Ms = elli_openapi_matchspec:routes_to_matchspecs(Endpoints),
+    Mref = ets:match_spec_compile(Ms),
+    ets:match_spec_run([{"user","Andreas","post",2}], Mref).
 
 to_endpoint({HttpMethod, Path, Fun}) ->
     {Module, Function, Arity} = erlang:fun_info_mfa(Fun),
@@ -40,7 +43,7 @@ to_endpoints(Funs) ->
 
 fun2ms_demo() ->
     Ms = ets:fun2ms(fun({"user", UserId, "post", PostId}) -> {get, "/user/{UserId}/post/{PostId}", [{'UserId', UserId}, {'PostId', PostId}]} end),
-    io:format("This is how the Match spec looks ~p", [Ms]),
+    io:format("This is how the Match spec looks~n~p~n", [Ms]),
     Mref = ets:match_spec_compile(Ms),
     ets:match_spec_run([{"user","Andreas","post",2}], Mref).
 join_function_specs([#ed_function_spec{args = [Arg],
@@ -50,3 +53,9 @@ join_function_specs([#ed_function_spec{args = [Arg],
                                                           _ReturnHeaders,
                                                           ReturnBody]}}]) ->
     {Arg, ReturnCode, ReturnBody}.
+
+test_matchspec() ->
+    Routes = [{get, "/user/{UserId}/post/{PostId}", fun elli_openapi_demo:endpoint/1}],
+    MatchSpecs = elli_openapi_matchspec:routes_to_matchspecs(Routes),
+    io:format("Generated match specs:~n~p~n", [MatchSpecs]),
+    MatchSpecs.
