@@ -20,11 +20,13 @@ routes_to_matchspecs(Routes) ->
 -spec parse_path(string()) -> {tuple(), [{atom(), atom()}]}.
 parse_path(Path) ->
     PathTokens = string:tokens(Path, "/"),
-    {Pattern, Variables, _VarNum} = lists:foldl(fun parse_path_token/2, {[], [], 1}, PathTokens),
+    {Pattern, Variables, _VarNum} =
+        lists:foldl(fun parse_path_token/2, {[], [], 1}, PathTokens),
     {list_to_tuple(lists:reverse(Pattern)), lists:reverse(Variables)}.
 
 %% @doc Parse a single path token, handling variables in {VarName} format
--spec parse_path_token(string(), {list(), list(), integer()}) -> {list(), list(), integer()}.
+-spec parse_path_token(string(), {list(), list(), integer()}) ->
+                          {list(), list(), integer()}.
 parse_path_token(Token, {Pattern, Variables, VarNum}) ->
     case is_variable(Token) of
         {true, VarName} ->

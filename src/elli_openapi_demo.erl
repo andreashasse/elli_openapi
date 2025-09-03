@@ -1,6 +1,6 @@
 -module(elli_openapi_demo).
 
--export([endpoint/1, endpoint2/1]).
+-export([endpoint/2, endpoint2/2]).
 
 -compile(nowarn_unused_type).
 
@@ -10,13 +10,14 @@
          age :: integer() | undefined,
          access :: [read | write | delete]}).
 
--spec endpoint(#{name => string(), shirt_size => small | medium | large}) ->
+-spec endpoint(#{}, #{name => string(), shirt_size => small | medium | large}) ->
                   {200, [], #{something => string()}}.
-endpoint(#{name := Name, shirt_size := Size}) ->
+endpoint(#{}, #{name := Name, shirt_size := Size}) ->
     {200,
      [],
      #{something => "Hello " ++ Name ++ ", your shirt size is " ++ atom_to_list(Size) ++ "!"}}.
 
--spec endpoint2(#user{}) -> {200, [], string()}.
-endpoint2(#user{access = _Access}) ->
+-spec endpoint2(#{userId := string(), post := string()}, #user{}) -> {200, [], string()}.
+endpoint2(#{userId := UserId, post := PostId}, #user{access = _Access} = User) ->
+    io:format("User ~s requested post ~s~n~p~n", [UserId, PostId, User]),
     {200, [], ""}.
