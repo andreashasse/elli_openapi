@@ -25,6 +25,7 @@ test_pelle2() ->
     Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
     Mref = ets:match_spec_compile(Ms),
     MyMap = path_map(RouteEndpoints),
+    %% Ah, this 2 will be a string after parsing the path. Should i introduce some flag to all int parsing. Should probably work the same for ranges.
     case ets:match_spec_run([{"user", "Andreas", "post", 2}], Mref) of
         [{Method, Path, PathArgsList}] ->
             PathArgs = maps:from_list(PathArgsList),
