@@ -1,6 +1,6 @@
 -module(elli_openapi).
 
--export([pelle/0, to_endpoint/1, test_pelle2/0, fun2ms_demo/0, test_matchspec/0]).
+-export([pelle/0, to_endpoint/1, test_pelle2/0, fun2ms_demo/0]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -17,21 +17,35 @@ pelle() ->
     erldantic_openapi:endpoints_to_openapi(Endpoints).
 
 test_pelle2() ->
-    Endpoints =
+    Routes =
         [{post, "/pelle", fun elli_openapi_demo:endpoint/2},
          {get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/2}],
-    to_endpoints(Endpoints),
-    Ms = elli_openapi_matchspec:routes_to_matchspecs(Endpoints),
+    RouteEndpoints = lists:map(fun (Route) -> {Route, to_endpoint(Route)} end, Routes),
+    endpoints_to_file(RouteEndpoints),
+    Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
     Mref = ets:match_spec_compile(Ms),
+    MyMap = path_map(RouteEndpoints),
     case ets:match_spec_run([{"user", "Andreas", "post", 2}], Mref) of
-        {Fun, PathArgs} ->
+        [{Method, Path, PathArgsList}] ->
+            PathArgs = maps:from_list(PathArgsList),
+            {Fun, Endpoint} = maps:get({Method, Path}, MyMap),
+            io:format("Matched, got: ~p ~p ~p~n", [Fun, PathArgs, Endpoint]),
             Fun(PathArgs, {user, "f", "l", 2, []});
         Other ->
             io:format("Did not match, got: ~p~n", [Other]),
             error
     end.
 
-to_endpoint({HttpMethod, Path, CallFun}) ->
+path_map(RouteEndpoints) ->
+   lists:foldl(
+       fun({{Method, Path, Fun}, Endpoint}, Acc) ->
+           maps:put({Method, Path}, {Fun, Endpoint}, Acc)
+       end,
+       maps:new(),
+       RouteEndpoints).
+
+
+to_endpoint({HttpMethod, Path, CallFun} ) ->
     {Module, Function, Arity} = erlang:fun_info_mfa(CallFun),
     TypeInfo = erldantic_abstract_code:types_in_module(Module),
     {ok, FunctionSpecs} = erldantic_type_info:get_function(TypeInfo, Function, Arity),
@@ -50,15 +64,15 @@ to_endpoint({HttpMethod, Path, CallFun}) ->
     Endpoint1 = erldantic_openapi:with_request_body(Endpoint00, Module, RequestBody),
     Endpoint2 =
         erldantic_openapi:with_response(Endpoint1, ReturnCode, "", Module, ReturnBody),
-    Endpoint2.
+  Endpoint2.
 
 to_map(#ed_map{fields = Fields}) ->
     lists:foldl(fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_list(Name) => Type} end,
                 #{},
                 Fields).
 
-to_endpoints(Funs) ->
-    Endpoints = lists:map(fun to_endpoint/1, Funs),
+endpoints_to_file(RouteEndpoints) ->
+    Endpoints = lists:map(fun({_Route, Endpoint}) -> Endpoint end, RouteEndpoints),
     {ok, EndpointsJson} = erldantic_openapi:endpoints_to_openapi(Endpoints),
     Json = json:encode(EndpointsJson),
     file:write_file("priv/openapi.json", Json).
@@ -80,9 +94,3 @@ join_function_specs([#ed_function_spec{args = [PathArgs, Body],
                                                           _ReturnHeaders,
                                                           ReturnBody]}}]) ->
     {PathArgs, Body, ReturnCode, ReturnBody}.
-
-test_matchspec() ->
-    Routes = [{get, "/user/{UserId}/post/{PostId}", fun elli_openapi_demo:endpoint/1}],
-    MatchSpecs = elli_openapi_matchspec:routes_to_matchspecs(Routes),
-    io:format("Generated match specs:~n~p~n", [MatchSpecs]),
-    MatchSpecs.

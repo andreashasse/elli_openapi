@@ -3,16 +3,18 @@
 -export([route_to_matchspec/1, routes_to_matchspecs/1]).
 
 %% @doc Convert a single route to a match specification
--spec route_to_matchspec({atom(), string(), fun()}) -> {tuple(), list(), list()}.
-route_to_matchspec({Method, Path, Fun}) ->
+-spec route_to_matchspec({{atom(), string(), fun()}, map()}) -> {tuple(), list(), list()}.
+route_to_matchspec({_Route, #{path := Path, method := Method}}) ->
     {PathPattern, Variables} = parse_path(Path),
+    % FIXME: Add method to match head.
     MatchHead = PathPattern,
     Guards = [],
-    Body = {{Method, Fun, Variables}},
+    %% Can not have maps in match spec bodies? I'll have to dig out the things I need.
+    Body = {{Method, Path, Variables}},
     {MatchHead, Guards, [Body]}.
 
 %% @doc Convert multiple routes to match specifications
--spec routes_to_matchspecs([{atom(), string(), fun()}]) -> [{tuple(), list(), list()}].
+-spec routes_to_matchspecs([{{atom(), string(), fun()}, map()}]) -> [{tuple(), list(), list()}].
 routes_to_matchspecs(Routes) ->
     lists:map(fun route_to_matchspec/1, Routes).
 
