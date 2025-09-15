@@ -18,8 +18,8 @@ pelle() ->
 
 test_pelle2() ->
     Routes =
-        [{post, "/pelle", fun elli_openapi_demo:endpoint/2},
-         {get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/2}],
+        [{post, "/pelle", fun elli_openapi_demo:endpoint/3},
+         {get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/3}],
     RouteEndpoints = lists:map(fun (Route) -> {Route, to_endpoint(Route)} end, Routes),
     endpoints_to_file(RouteEndpoints),
     Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
@@ -31,7 +31,7 @@ test_pelle2() ->
             PathArgs = maps:from_list(PathArgsList),
             {Fun, Endpoint} = maps:get({Method, Path}, MyMap),
             io:format("Matched, got: ~p ~p ~p~n", [Fun, PathArgs, Endpoint]),
-            Fun(PathArgs, {user, "f", "l", 2, []});
+            Fun(PathArgs, #{'User-Agent' => "MyUserAgent"}, {user, "f", "l", 2, []});
         Other ->
             io:format("Did not match, got: ~p~n", [Other]),
             error
@@ -50,9 +50,9 @@ to_endpoint({HttpMethod, Path, CallFun} ) ->
     {Module, Function, Arity} = erlang:fun_info_mfa(CallFun),
     TypeInfo = erldantic_abstract_code:types_in_module(Module),
     {ok, FunctionSpecs} = erldantic_type_info:get_function(TypeInfo, Function, Arity),
-    {PathArgs, RequestBody, ReturnCode, ReturnBody} = join_function_specs(FunctionSpecs),
+    {PathArgs, HeaderArgs, RequestBody, ReturnCode, ReturnBody} = join_function_specs(FunctionSpecs),
     Endpoint0 = erldantic_openapi:endpoint(HttpMethod, Path),
-    Fun = fun(Key, Val, EndpointAcc) ->
+    PathFun = fun(Key, Val, EndpointAcc) ->
              PathArg =
                  #{name => Key,
                    in => path,
@@ -61,8 +61,18 @@ to_endpoint({HttpMethod, Path, CallFun} ) ->
 
              erldantic_openapi:with_parameter(EndpointAcc, Module, PathArg)
           end,
-    Endpoint00 = maps:fold(Fun, Endpoint0, to_map(PathArgs)),
-    Endpoint1 = erldantic_openapi:with_request_body(Endpoint00, Module, RequestBody),
+    EndpointWithPath = maps:fold(PathFun, Endpoint0, to_map(PathArgs)),
+    HeaderFun = fun(Key, Val, EndpointAcc) ->
+             HeaderArg =
+                 #{name => Key,
+                   in => header,
+                   required => true,
+                   schema => Val},
+
+             erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
+          end,
+    EndpointWithHeaders = maps:fold(HeaderFun, EndpointWithPath, to_map(HeaderArgs)),
+    Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
     Endpoint2 =
         erldantic_openapi:with_response(Endpoint1, ReturnCode, "", Module, ReturnBody),
   Endpoint2.
@@ -88,10 +98,10 @@ fun2ms_demo() ->
     Mref = ets:match_spec_compile(Ms),
     ets:match_spec_run([{"user", "Andreas", "post", 2}], Mref).
 
-join_function_specs([#ed_function_spec{args = [PathArgs, Body],
+join_function_specs([#ed_function_spec{args = [PathArgs, HeaderArgs, Body],
                                        return =
                                            #ed_tuple{fields =
                                                          [#ed_literal{value = ReturnCode},
                                                           _ReturnHeaders,
                                                           ReturnBody]}}]) ->
-    {PathArgs, Body, ReturnCode, ReturnBody}.
+    {PathArgs, HeaderArgs, Body, ReturnCode, ReturnBody}.
