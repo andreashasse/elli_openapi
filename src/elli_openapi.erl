@@ -1,107 +1,183 @@
 -module(elli_openapi).
 
--export([pelle/0, to_endpoint/1, test_pelle2/0, fun2ms_demo/0]).
+-export([demo/0, setup_routes/1, route_call/1]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
+-include_lib("elli/include/elli.hrl").
 
 -compile(nowarn_unused_type).
 
--type my_map() :: #{name := string(), age := integer()}.
+-record(handler_type,
+        {mfa :: mfa(),
+         path_args :: #ed_map{},
+         header_args :: #ed_map{},
+         request_body :: erldantic:ed_type(),
+         return_code :: integer(),
+         return_body :: erldantic:ed_type()}).
 
--spec pelle() -> term().
-pelle() ->
-    Endpoint0 = erldantic_openapi:endpoint(get, "/pelle"),
-    Endpoint1 = erldantic_openapi:with_request_body(Endpoint0, ?MODULE, {type, my_map, 0}),
-    Endpoints = [Endpoint1],
-    erldantic_openapi:endpoints_to_openapi(Endpoints).
-
-test_pelle2() ->
+demo() ->
     Routes =
         [{post, "/pelle", fun elli_openapi_demo:endpoint/3},
          {get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/3}],
-    RouteEndpoints = lists:map(fun (Route) -> {Route, to_endpoint(Route)} end, Routes),
+    ElliRequest =
+        #req{args = [],
+             method = 'GET',
+             pid = self(),
+             callback = {elli_example_callback, []},
+             raw_path = <<"mojs">>,
+             version = {1, 1},
+             body = <<"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\",\"age\":42}">>,
+             headers = [],
+             path = [<<"mojs">>]},
+    setup_routes(Routes),
+    route_call(ElliRequest).
+
+setup_routes(Routes) ->
+    RouteEndpoints =
+        lists:map(fun(Route) ->
+                     HandlerType = to_handler_type(Route),
+                     {Route, to_endpoint(Route, HandlerType), HandlerType}
+                  end,
+                  Routes),
     endpoints_to_file(RouteEndpoints),
-    Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
-    Mref = ets:match_spec_compile(Ms),
+    Mref = to_matchspec(RouteEndpoints),
     MyMap = path_map(RouteEndpoints),
-    %% Ah, this 2 will be a string after parsing the path. Should i introduce some flag to all int parsing. Should probably work the same for ranges.
-    case ets:match_spec_run([{"user", "Andreas", "post", 2}], Mref) of
-        [{Method, Path, PathArgsList}] ->
-            PathArgs = maps:from_list(PathArgsList),
-            {Fun, Endpoint} = maps:get({Method, Path}, MyMap),
-            io:format("Matched, got: ~p ~p ~p~n", [Fun, PathArgs, Endpoint]),
-            Fun(PathArgs, #{'User-Agent' => "MyUserAgent"}, {user, "f", "l", 2, []});
+    persistent_term:put(?MODULE, {Mref, MyMap}),
+    ok.
+
+route_call(ElliRequest) ->
+    {Mref, MyMap} = persistent_term:get(?MODULE),
+    Method = get,
+    case ets:match_spec_run([{Method, {"user", "Andreas", "post", "2"}}], Mref) of
+        [{Path, HttpPathArgsList}] ->
+            HttpPathArgs = maps:from_list(HttpPathArgsList),
+            {Fun, Endpoint, HandlerType} = maps:get({Method, Path}, MyMap),
+            io:format("Matched~nFun:  ~p~nPath: ~p~nEnd:  ~p~nType: ~p ~n",
+                      [Fun, HttpPathArgs, Endpoint, HandlerType]),
+            case check_types(HandlerType, HttpPathArgs, ElliRequest) of
+                {ok, PathArgs, _Headers, Body} ->
+                    Fun(PathArgs, #{'User-Agent' => "MyUserAgent"}, Body);
+                {error, ErrorCode, ErrorBody} ->
+                    {ErrorCode, [], ErrorBody}
+            end;
         Other ->
             io:format("Did not match, got: ~p~n", [Other]),
             error
     end.
 
+check_types(HandlerType, PathArgs, ElliRequest) ->
+    #handler_type{mfa = {Module, _, _},
+                  path_args = PathArgsType,
+                  header_args = _HeaderArgsType,
+                  request_body = RequestBodyType} = HandlerType,
+    code:ensure_loaded(Module),
+    Body = json:decode(elli_request:body(ElliRequest)),
+    case erldantic_json:from_json(Module, RequestBodyType, Body) of
+        {ok, DecodedBody} ->
+            case decode_path_args(Module, PathArgs, PathArgsType) of
+                {ok, DecodePathArgs} ->
+                    {ok, DecodePathArgs, #{}, DecodedBody};
+                {error, _} = Error ->
+                    Error
+            end;
+       {error, _} = Error ->
+            Error
+    end.
+
+decode_path_args(Module, PathArgs, PathArgsType) ->
+    erldantic_util:fold_until_error(
+        fun({map_field_exact,FieldName,Type}, Acc) ->
+            case maps:find(FieldName, PathArgs) of
+                {ok, PathArg} ->
+                    case erldantic_string:from_string(Module, Type, PathArg) of
+                        {ok, DecodedPathArgs} ->
+                            {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                error ->
+                    {error, missing_path_arg, FieldName}
+            end
+        end,
+        #{}, PathArgsType#ed_map.fields).
+
+
+to_matchspec(RouteEndpoints) ->
+    Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
+    ets:match_spec_compile(Ms).
+
 path_map(RouteEndpoints) ->
-   lists:foldl(
-       fun({{Method, Path, Fun}, Endpoint}, Acc) ->
-           maps:put({Method, Path}, {Fun, Endpoint}, Acc)
-       end,
-       maps:new(),
-       RouteEndpoints).
+    lists:foldl(fun({{Method, Path, Fun}, Endpoint, HandlerType}, Acc) ->
+                   maps:put({Method, Path}, {Fun, Endpoint, HandlerType}, Acc)
+                end,
+                maps:new(),
+                RouteEndpoints).
 
-
-to_endpoint({HttpMethod, Path, CallFun} ) ->
-    {Module, Function, Arity} = erlang:fun_info_mfa(CallFun),
+to_handler_type({_HttpMethod, _Path, CallFun}) ->
+    {Module, Function, Arity} = MFA = erlang:fun_info_mfa(CallFun),
     TypeInfo = erldantic_abstract_code:types_in_module(Module),
     {ok, FunctionSpecs} = erldantic_type_info:get_function(TypeInfo, Function, Arity),
-    {PathArgs, HeaderArgs, RequestBody, ReturnCode, ReturnBody} = join_function_specs(FunctionSpecs),
+    join_function_specs(MFA, FunctionSpecs).
+
+to_endpoint({HttpMethod, Path, _CallFun},
+            #handler_type{mfa = {Module, _Function, _Arity},
+                          path_args = PathArgs,
+                          header_args = HeaderArgs,
+                          request_body = RequestBody,
+                          return_code = ReturnCode,
+                          return_body = ReturnBody}) ->
     Endpoint0 = erldantic_openapi:endpoint(HttpMethod, Path),
-    PathFun = fun(Key, Val, EndpointAcc) ->
-             PathArg =
-                 #{name => Key,
-                   in => path,
-                   required => true,
-                   schema => Val},
+    PathFun =
+        fun(Key, Val, EndpointAcc) ->
+           PathArg =
+               #{name => Key,
+                 in => path,
+                 required => true,
+                 schema => Val},
 
-             erldantic_openapi:with_parameter(EndpointAcc, Module, PathArg)
-          end,
+           erldantic_openapi:with_parameter(EndpointAcc, Module, PathArg)
+        end,
     EndpointWithPath = maps:fold(PathFun, Endpoint0, to_map(PathArgs)),
-    HeaderFun = fun(Key, Val, EndpointAcc) ->
-             HeaderArg =
-                 #{name => Key,
-                   in => header,
-                   required => true,
-                   schema => Val},
+    HeaderFun =
+        fun(Key, Val, EndpointAcc) ->
+           HeaderArg =
+               #{name => Key,
+                 in => header,
+                 required => true,
+                 schema => Val},
 
-             erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
-          end,
+           erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
+        end,
     EndpointWithHeaders = maps:fold(HeaderFun, EndpointWithPath, to_map(HeaderArgs)),
     Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
     Endpoint2 =
         erldantic_openapi:with_response(Endpoint1, ReturnCode, "", Module, ReturnBody),
-  Endpoint2.
+    Endpoint2.
 
 to_map(#ed_map{fields = Fields}) ->
-    lists:foldl(fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_list(Name) => Type} end,
+    lists:foldl(fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_list(Name) => Type}
+                end,
                 #{},
                 Fields).
 
 endpoints_to_file(RouteEndpoints) ->
-    Endpoints = lists:map(fun({_Route, Endpoint}) -> Endpoint end, RouteEndpoints),
+    Endpoints =
+        lists:map(fun({_Route, Endpoint, _HandlerType}) -> Endpoint end, RouteEndpoints),
     {ok, EndpointsJson} = erldantic_openapi:endpoints_to_openapi(Endpoints),
     Json = json:encode(EndpointsJson),
     file:write_file("priv/openapi.json", Json).
 
-fun2ms_demo() ->
-    Ms = ets:fun2ms(fun({"user", UserId, "post", PostId}) ->
-                       {get,
-                        "/user/{UserId}/post/{PostId}",
-                        [{'UserId', UserId}, {'PostId', PostId}]}
-                    end),
-    io:format("This is how the Match spec looks~n~p~n", [Ms]),
-    Mref = ets:match_spec_compile(Ms),
-    ets:match_spec_run([{"user", "Andreas", "post", 2}], Mref).
-
-join_function_specs([#ed_function_spec{args = [PathArgs, HeaderArgs, Body],
+join_function_specs(MFA,
+                    [#ed_function_spec{args = [PathArgs, HeaderArgs, Body],
                                        return =
                                            #ed_tuple{fields =
                                                          [#ed_literal{value = ReturnCode},
                                                           _ReturnHeaders,
                                                           ReturnBody]}}]) ->
-    {PathArgs, HeaderArgs, Body, ReturnCode, ReturnBody}.
+    #handler_type{mfa = MFA,
+                  path_args = PathArgs,
+                  header_args = HeaderArgs,
+                  request_body = Body,
+                  return_code = ReturnCode,
+                  return_body = ReturnBody}.

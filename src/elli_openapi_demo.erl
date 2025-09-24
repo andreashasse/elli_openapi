@@ -17,7 +17,13 @@ endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
      [],
      #{something => "Hello " ++ Name ++ ", your shirt size is " ++ atom_to_list(Size) ++ "!"}}.
 
--spec endpoint2(#{userId := string(), postId := string()}, #{'User-Agent' := string()}, #user{}) -> {200, [], string()}.
-endpoint2(#{userId := UserId, postId := PostId}, #{'User-Agent' := UserAgent}, #user{access = _Access} = User) ->
-    io:format("User ~s with Agent ~p requested post ~w~n~p~n", [UserId, UserAgent, PostId, User]),
+-spec endpoint2(#{userId := string(), postId := string()},
+                #{'User-Agent' := string()},
+                #user{}) ->
+                   {200, [], string()}.
+endpoint2(#{userId := UserId, postId := PostId},
+          #{'User-Agent' := UserAgent},
+          #user{access = _Access} = User) ->
+    io:format("User ~s with Agent ~p requested post ~p~n~p~n",
+              [UserId, UserAgent, PostId, User]),
     {200, [], ""}.
