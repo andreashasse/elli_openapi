@@ -22,7 +22,6 @@ routes_to_matchspecs(Routes) ->
 -spec parse_path(binary()) -> {tuple(), [{atom(), atom()}]}.
 parse_path(Path) ->
     PathTokens = binary:split(Path, <<"/">>, [global, trim_all]),
-    io:format("Path tokens: ~p~n", [PathTokens]),
     {Pattern, Variables, _VarNum} =
         lists:foldl(fun parse_path_token/2, {[], [], 1}, PathTokens),
     {list_to_tuple(lists:reverse(Pattern)), lists:reverse(Variables)}.

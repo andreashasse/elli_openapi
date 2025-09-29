@@ -22,8 +22,8 @@
 
 demo() ->
     Routes =
-        [{<<"post">>, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
-         {<<"get">>, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
+        [{<<"POST">>, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
+         {<<"GET">>, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
     ElliRequest =
         #req{args = [],
              method = 'GET',
@@ -53,13 +53,14 @@ setup_routes(Routes) ->
 
 route_call(ElliRequest) ->
     {Mref, MyMap} = persistent_term:get(?MODULE),
-    Method = get,
+    Method = ensure_binary(elli_request:method(ElliRequest)),
+    io:format("Method ~p~n", [Method]),
     Path = list_to_tuple(elli_request:path(ElliRequest)),
-    io:format("Path ~p", [Path]),
+    io:format("Path ~p~n", [Path]),
     case ets:match_spec_run([{Method, Path}], Mref) of
-        [{Path, HttpPathArgsList}] ->
+        [{RoutePath, HttpPathArgsList}] ->
             HttpPathArgs = maps:from_list(HttpPathArgsList),
-            {Fun, Endpoint, HandlerType} = maps:get({Method, Path}, MyMap),
+            {Fun, Endpoint, HandlerType} = maps:get({Method, RoutePath}, MyMap),
             io:format("Matched~nFun:  ~p~nPath: ~p~nEnd:  ~p~nType: ~p ~n",
                       [Fun, HttpPathArgs, Endpoint, HandlerType]),
             case check_types(HandlerType, HttpPathArgs, ElliRequest) of
@@ -72,6 +73,9 @@ route_call(ElliRequest) ->
             io:format("Did not match, got: ~p~n", [Other]),
             error
     end.
+
+ensure_binary(Bin) when is_binary(Bin) -> Bin;
+ensure_binary(Atom) when is_atom(Atom) -> atom_to_binary(Atom, utf8).
 
 check_types(HandlerType, PathArgs, ElliRequest) ->
     #handler_type{mfa = {Module, _, _},
@@ -150,6 +154,7 @@ decode_headers(Module, HeadersType, Headers) ->
 
 to_matchspec(RouteEndpoints) ->
     Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
+    io:format("Matchspec ~p~n", [Ms]),
     ets:match_spec_compile(Ms).
 
 path_map(RouteEndpoints) ->
