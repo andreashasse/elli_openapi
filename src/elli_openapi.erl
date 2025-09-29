@@ -18,8 +18,8 @@
 
 demo() ->
     Routes =
-        [{post, "/pelle", fun elli_openapi_demo:endpoint/3},
-         {get, "/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/3}],
+        [{post, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
+         {get, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
     ElliRequest =
         #req{args = [],
              method = 'GET',
@@ -27,9 +27,10 @@ demo() ->
              callback = {elli_example_callback, []},
              raw_path = <<"mojs">>,
              version = {1, 1},
-             body = <<"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\",\"age\":42}">>,
-             headers = [],
-             path = [<<"mojs">>]},
+             body =
+                 <<"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\",\"age\":42}">>,
+             headers = [{<<"User-Agent"/utf8>>, <<"Firefox"/utf8>>}],
+             path = [<<"user">>, <<"Andreas">>, <<"post">>, <<"2">>]},
     setup_routes(Routes),
     route_call(ElliRequest).
 
@@ -49,15 +50,17 @@ setup_routes(Routes) ->
 route_call(ElliRequest) ->
     {Mref, MyMap} = persistent_term:get(?MODULE),
     Method = get,
-    case ets:match_spec_run([{Method, {"user", "Andreas", "post", "2"}}], Mref) of
+    Path = list_to_tuple(elli_request:path(ElliRequest)),
+    io:format("Path ~p", [Path]),
+    case ets:match_spec_run([{Method, Path}], Mref) of
         [{Path, HttpPathArgsList}] ->
             HttpPathArgs = maps:from_list(HttpPathArgsList),
             {Fun, Endpoint, HandlerType} = maps:get({Method, Path}, MyMap),
             io:format("Matched~nFun:  ~p~nPath: ~p~nEnd:  ~p~nType: ~p ~n",
                       [Fun, HttpPathArgs, Endpoint, HandlerType]),
             case check_types(HandlerType, HttpPathArgs, ElliRequest) of
-                {ok, PathArgs, _Headers, Body} ->
-                    Fun(PathArgs, #{'User-Agent' => "MyUserAgent"}, Body);
+                {ok, PathArgs, Headers, Body} ->
+                    Fun(PathArgs, Headers, Body);
                 {error, ErrorCode, ErrorBody} ->
                     {ErrorCode, [], ErrorBody}
             end;
@@ -69,39 +72,77 @@ route_call(ElliRequest) ->
 check_types(HandlerType, PathArgs, ElliRequest) ->
     #handler_type{mfa = {Module, _, _},
                   path_args = PathArgsType,
-                  header_args = _HeaderArgsType,
-                  request_body = RequestBodyType} = HandlerType,
+                  header_args = HeadersType,
+                  request_body = RequestBodyType} =
+        HandlerType,
     code:ensure_loaded(Module),
-    Body = json:decode(elli_request:body(ElliRequest)),
+    Body =
+        json:decode(
+            elli_request:body(ElliRequest)),
     case erldantic_json:from_json(Module, RequestBodyType, Body) of
         {ok, DecodedBody} ->
             case decode_path_args(Module, PathArgs, PathArgsType) of
                 {ok, DecodePathArgs} ->
-                    {ok, DecodePathArgs, #{}, DecodedBody};
+                    case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
+                        {ok, DecodedHeader} ->
+                            {ok, DecodePathArgs, DecodedHeader, DecodedBody};
+                        {error, _} = Error ->
+                            Error
+                    end;
                 {error, _} = Error ->
                     Error
             end;
-       {error, _} = Error ->
+        {error, _} = Error ->
             Error
     end.
 
 decode_path_args(Module, PathArgs, PathArgsType) ->
-    erldantic_util:fold_until_error(
-        fun({map_field_exact,FieldName,Type}, Acc) ->
-            case maps:find(FieldName, PathArgs) of
-                {ok, PathArg} ->
-                    case erldantic_string:from_string(Module, Type, PathArg) of
-                        {ok, DecodedPathArgs} ->
-                            {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
-                        {error, _} = Error ->
-                            Error
-                    end;
-                error ->
-                    {error, missing_path_arg, FieldName}
-            end
-        end,
-        #{}, PathArgsType#ed_map.fields).
+    erldantic_util:fold_until_error(fun({map_field_exact, FieldName, Type}, Acc) ->
+                                       case maps:find(FieldName, PathArgs) of
+                                           {ok, PathArg} ->
+                                               case
+                                                   erldantic_binary_string:from_binary_string(Module,
+                                                                                              Type,
+                                                                                              PathArg)
+                                               of
+                                                   {ok, DecodedPathArgs} ->
+                                                       {ok,
+                                                        maps:put(FieldName, DecodedPathArgs, Acc)};
+                                                   {error, _} = Error ->
+                                                       Error
+                                               end;
+                                           error ->
+                                               {error, {missing_path_arg, FieldName}}
+                                       end
+                                    end,
+                                    #{},
+                                    PathArgsType#ed_map.fields).
 
+decode_headers(Module, HeadersType, Headers) ->
+    erldantic_util:fold_until_error(fun({map_field_exact, FieldName, Type}, Acc) ->
+                                       HeaderName = atom_to_binary(FieldName),
+                                       io:format("Decoding header ~p~n", [HeaderName]),
+                                       case lists:keyfind(HeaderName, 1, Headers) of
+                                           {HeaderName, HeaderValue} ->
+                                               case
+                                                   erldantic_binary_string:from_binary_string(Module,
+                                                                                              Type,
+                                                                                              HeaderValue)
+                                               of
+                                                   {ok, DecodedHeader} ->
+                                                       io:format("Decoded header ~p: ~p~n",
+                                                                 [FieldName, DecodedHeader]),
+                                                       {ok,
+                                                        maps:put(FieldName, DecodedHeader, Acc)};
+                                                   {error, _} = Error ->
+                                                       Error
+                                               end;
+                                           false ->
+                                               {error, {missing_header, FieldName}}
+                                       end
+                                    end,
+                                    #{},
+                                    HeadersType#ed_map.fields).
 
 to_matchspec(RouteEndpoints) ->
     Ms = elli_openapi_matchspec:routes_to_matchspecs(RouteEndpoints),
