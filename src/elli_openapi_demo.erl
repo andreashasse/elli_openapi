@@ -5,8 +5,8 @@
 -compile(nowarn_unused_type).
 
 -record(user,
-        {first_name :: string(),
-         last_name :: string(),
+        {first_name :: binary(),
+         last_name :: binary(),
          age :: integer() | undefined,
          access :: [read | write | delete]}).
 

@@ -32,7 +32,7 @@ demo() ->
              raw_path = <<"mojs">>,
              version = {1, 1},
              body =
-                 <<"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\",\"age\":42}">>,
+                 <<"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\"}">>,
              headers = [{<<"User-Agent"/utf8>>, <<"Firefox"/utf8>>}],
              path = [<<"user">>, <<"Andreas">>, <<"post">>, <<"2">>]},
     setup_routes(Routes),

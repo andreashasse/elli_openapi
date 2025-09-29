@@ -25,11 +25,27 @@ start_link() ->
 %%                  type => worker(),       % optional
 %%                  modules => modules()}   % optional
 init([]) ->
-    SupFlags =
+    Routes =
+        [{<<"POST">>, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
+         {<<"GET">>, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
+
+    ElliOpts = [
+            {callback, elli_openapi_handler},
+            {callback_args, Routes},
+            {port, 3000}
+        ],
+        ElliSpec = {
+            _Id = elli_minimal_http,
+            _Start = {elli, start_link, [ElliOpts]},
+            _Restart = permanent,
+            _Shutdown = 5000,
+            _Worker = worker,
+            _Modules = [elli]},
+        SupFlags =
         #{strategy => one_for_all,
           intensity => 0,
           period => 1},
-    ChildSpecs = [],
+    ChildSpecs = [ElliSpec],
     {ok, {SupFlags, ChildSpecs}}.
 
 %% internal functions
