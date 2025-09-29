@@ -16,10 +16,14 @@
          return_code :: integer(),
          return_body :: erldantic:ed_type()}).
 
+-type erldantic_openapi__endpoint_spec() :: map().
+
+%% FIXME: Export types from erldantic_openapi.
+
 demo() ->
     Routes =
-        [{post, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
-         {get, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
+        [{<<"post">>, <<"/pelle">>, fun elli_openapi_demo:endpoint/3},
+         {<<"get">>, <<"/user/{userId}/post/{postId}">>, fun elli_openapi_demo:endpoint2/3}],
     ElliRequest =
         #req{args = [],
              method = 'GET',
@@ -155,12 +159,15 @@ path_map(RouteEndpoints) ->
                 maps:new(),
                 RouteEndpoints).
 
+-spec to_handler_type({atom(), binary(), fun()}) -> #handler_type{}.
 to_handler_type({_HttpMethod, _Path, CallFun}) ->
     {Module, Function, Arity} = MFA = erlang:fun_info_mfa(CallFun),
     TypeInfo = erldantic_abstract_code:types_in_module(Module),
     {ok, FunctionSpecs} = erldantic_type_info:get_function(TypeInfo, Function, Arity),
     join_function_specs(MFA, FunctionSpecs).
 
+-spec to_endpoint({binary(), binary(), fun()}, #handler_type{}) ->
+                     erldantic_openapi__endpoint_spec().
 to_endpoint({HttpMethod, Path, _CallFun},
             #handler_type{mfa = {Module, _Function, _Arity},
                           path_args = PathArgs,
@@ -175,6 +182,7 @@ to_endpoint({HttpMethod, Path, _CallFun},
                #{name => Key,
                  in => path,
                  required => true,
+                 module => Module,
                  schema => Val},
 
            erldantic_openapi:with_parameter(EndpointAcc, Module, PathArg)
@@ -185,7 +193,9 @@ to_endpoint({HttpMethod, Path, _CallFun},
            HeaderArg =
                #{name => Key,
                  in => header,
+                 %% FIXME: handle optional headers
                  required => true,
+                 module => Module,
                  schema => Val},
 
            erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
@@ -193,7 +203,7 @@ to_endpoint({HttpMethod, Path, _CallFun},
     EndpointWithHeaders = maps:fold(HeaderFun, EndpointWithPath, to_map(HeaderArgs)),
     Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
     Endpoint2 =
-        erldantic_openapi:with_response(Endpoint1, ReturnCode, "", Module, ReturnBody),
+        erldantic_openapi:with_response(Endpoint1, ReturnCode, <<"">>, Module, ReturnBody),
     Endpoint2.
 
 to_map(#ed_map{fields = Fields}) ->
