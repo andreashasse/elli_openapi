@@ -22,9 +22,7 @@
       Result :: elli_handler:result().
 handle(ElliRequest, Args) ->
     io:format("elli_openapi_handler: handle ~p ~p~n", [ElliRequest, Args]),
-    elli_openapi:route_call(ElliRequest),
-    %% Just a simple example that returns a 200 OK with "Hello World!".
-    {200, [], <<"Hello World!">>}.
+    elli_openapi:route_call(ElliRequest).
 
 %%
 %% ELLI EVENT CALLBACKS

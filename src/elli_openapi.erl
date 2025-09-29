@@ -71,7 +71,7 @@ route_call(ElliRequest) ->
             end;
         Other ->
             io:format("Did not match, got: ~p~n", [Other]),
-            error
+            {404, [], <<"Not Found">>}
     end.
 
 ensure_binary(Bin) when is_binary(Bin) -> Bin;

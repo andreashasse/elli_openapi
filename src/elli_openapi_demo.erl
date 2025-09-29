@@ -20,10 +20,10 @@ endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
 -spec endpoint2(#{userId := string(), postId := string()},
                 #{'User-Agent' := string()},
                 #user{}) ->
-                   {200, [], string()}.
+                   {200, [], iodata()}.
 endpoint2(#{userId := UserId, postId := PostId},
           #{'User-Agent' := UserAgent},
           #user{access = _Access} = User) ->
     io:format("User ~s with Agent ~p requested post ~p~n~p~n",
               [UserId, UserAgent, PostId, User]),
-    {200, [], ""}.
+    {200, [], io_lib:format("User ~p", [UserId])}.
