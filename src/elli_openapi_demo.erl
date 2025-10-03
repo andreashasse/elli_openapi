@@ -4,26 +4,34 @@
 
 -compile(nowarn_unused_type).
 
--record(user,
-        {first_name :: binary(),
-         last_name :: binary(),
-         age :: integer() | undefined,
-         access :: [read | write | delete]}).
+-record(user, {
+    first_name :: binary(),
+    last_name :: binary(),
+    age :: integer() | undefined,
+    access :: [read | write | delete]
+}).
 
 -spec endpoint(#{}, #{}, #{name => string(), shirt_size => small | medium | large}) ->
-                  {200, [], #{something => string()}}.
+    {200, [], #{something => string()}}.
 endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
-    {200,
-     [],
-     #{something => "Hello " ++ Name ++ ", your shirt size is " ++ atom_to_list(Size) ++ "!"}}.
+    {200, [], #{
+        something => "Hello " ++ Name ++ ", your shirt size is " ++ atom_to_list(Size) ++ "!"
+    }}.
 
--spec endpoint2(#{userId := string(), postId := string()},
-                #{'User-Agent' := string()},
-                #user{}) ->
-                   {200, [], iodata()}.
-endpoint2(#{userId := UserId, postId := PostId},
-          #{'User-Agent' := UserAgent},
-          #user{access = _Access} = User) ->
-    io:format("User ~s with Agent ~p requested post ~p~n~p~n",
-              [UserId, UserAgent, PostId, User]),
-    {200, [], io_lib:format("User ~p", [UserId])}.
+-spec endpoint2(
+    #{userId := string(), postId := integer()},
+    #{'User-Agent' := string()},
+    #user{}
+) ->
+    {200, [], iodata()}.
+endpoint2(
+    #{userId := UserId, postId := PostId},
+    #{'User-Agent' := UserAgent},
+    #user{access = _Access} = User
+) ->
+    Response =
+        io_lib:format(
+            "User ~s with Agent ~p requested post ~p~n~p~n",
+            [UserId, UserAgent, PostId, User]
+        ),
+    {200, [], Response}.

@@ -28,7 +28,7 @@ parse_path(Path) ->
 
 %% @doc Parse a single path token, handling variables in {VarName} format
 -spec parse_path_token(binary(), {list(), list(), integer()}) ->
-                          {list(), list(), integer()}.
+    {list(), list(), integer()}.
 parse_path_token(Token, {Pattern, Variables, VarNum}) ->
     case is_variable(Token) of
         {true, VarName} ->

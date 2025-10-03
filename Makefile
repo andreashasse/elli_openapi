@@ -6,13 +6,13 @@ compile:
 	rebar3 compile
 
 format:
-	rebar3 format
+	rebar3 fmt
 
 hank:
 	rebar3 hank
 
 format_verify:
-	rebar3 format --verify
+	rebar3 fmt --check
 
 test:
 	rebar3 eunit
