@@ -225,7 +225,7 @@ to_endpoint(
         return_body = ReturnBody
     }
 ) ->
-    Endpoint0 = erldantic_openapi:endpoint(list_to_binary(string:lowercase(binary_to_list(HttpMethod))), Path),
+    Endpoint0 = erldantic_openapi:endpoint(to_erldantic_http_method(HttpMethod), Path),
     PathFun =
         fun(Key, Val, EndpointAcc) ->
             PathArg =
@@ -259,6 +259,15 @@ to_endpoint(
     Endpoint2 =
         erldantic_openapi:with_response(Endpoint1, ReturnCode, <<"">>, Module, ReturnBody),
     Endpoint2.
+
+to_erldantic_http_method(~"GET") -> get;
+to_erldantic_http_method(~"POST") -> post;
+to_erldantic_http_method(~"PUT") -> put;
+to_erldantic_http_method(~"DELETE") -> delete;
+to_erldantic_http_method(~"PATCH") -> patch;
+to_erldantic_http_method(~"HEAD") -> head;
+to_erldantic_http_method(~"OPTIONS") -> options;
+to_erldantic_http_method(~"TRACE") -> trace.
 
 to_map(#ed_map{fields = Fields}) ->
     lists:foldl(

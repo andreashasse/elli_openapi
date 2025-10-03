@@ -7,7 +7,7 @@
   0},
  {<<"erldantic">>,
   {git,"https://github.com/andreashasse/erldantic.git",
-       {ref,"61f6dd6ad75025e08dd586b68a1704a4c8fae38d"}},
+       {ref,"2f607d453283bd9bba815a0302df3996d39283cf"}},
   0}]}.
 [
 {pkg_hash,[
