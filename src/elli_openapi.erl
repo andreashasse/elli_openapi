@@ -14,6 +14,7 @@
     header_args :: #ed_map{},
     request_body :: erldantic:ed_type(),
     return_code :: integer(),
+    return_headers :: #ed_map{},
     return_body :: erldantic:ed_type()
 }).
 
@@ -68,7 +69,8 @@ route_call(ElliRequest) ->
             {Fun, _Endpoint, HandlerType} = maps:get({Method, RoutePath}, MyMap),
             case check_types(HandlerType, HttpPathArgs, ElliRequest) of
                 {ok, PathArgs, Headers, Body} ->
-                    Fun(PathArgs, Headers, Body);
+                    Response = Fun(PathArgs, Headers, Body),
+                    check_and_convert_response(HandlerType, Response);
                 {error, ErldanticErrors} ->
                     {400, [], erldantic_error_to_response_body(ErldanticErrors)}
             end;
@@ -76,6 +78,29 @@ route_call(ElliRequest) ->
             {404, [], ~"Not Found"}
     end.
 
+check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
+    #handler_type{
+        mfa = {Module, _, _},
+        return_code = _ReturnCodeType,
+        return_headers = ReturnHeadersType,
+        return_body = ReturnBodyType
+    } =
+        HandlerType,
+    %% FIXME: What was I thinking around http codes
+    case erldantic_json:to_json(Module, ReturnBodyType, Body) of
+        {ok, JsonBody} ->
+            case encode_headers(Module, ReturnHeadersType, Headers) of
+                {ok, EncodedHeaders} ->
+                    {HttpCode, EncodedHeaders, json:encode(JsonBody)};
+                {error, ErldanticErrors} ->
+                    {500, [], erldantic_error_to_response_body(ErldanticErrors)}
+            end;
+        {error, ErldanticErrors} ->
+            {500, [], erldantic_error_to_response_body(ErldanticErrors)}
+    end.
+
+encode_headers(_Module, _ReturnHeaders, _Headers) ->
+    {ok, []}.
 %% FIXME: very debuggish
 erldantic_error_to_response_body(Errors) ->
     io_lib:format("Errors: ~p", [Errors]).
@@ -200,7 +225,7 @@ to_endpoint(
         return_body = ReturnBody
     }
 ) ->
-    Endpoint0 = erldantic_openapi:endpoint(HttpMethod, Path),
+    Endpoint0 = erldantic_openapi:endpoint(list_to_binary(string:lowercase(binary_to_list(HttpMethod))), Path),
     PathFun =
         fun(Key, Val, EndpointAcc) ->
             PathArg =
@@ -237,7 +262,7 @@ to_endpoint(
 
 to_map(#ed_map{fields = Fields}) ->
     lists:foldl(
-        fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_list(Name) => Type} end,
+        fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_binary(Name) => Type} end,
         #{},
         Fields
     ).

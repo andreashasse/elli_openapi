@@ -23,7 +23,7 @@ endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
     #{'User-Agent' := string()},
     #user{}
 ) ->
-    {200, [], iodata()}.
+    {200, #{}, #{something => iodata()}}.
 endpoint2(
     #{userId := UserId, postId := PostId},
     #{'User-Agent' := UserAgent},
@@ -34,4 +34,4 @@ endpoint2(
             "User ~s with Agent ~p requested post ~p~n~p~n",
             [UserId, UserAgent, PostId, User]
         ),
-    {200, [], Response}.
+    {200, #{}, #{something => Response}}.

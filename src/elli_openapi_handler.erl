@@ -3,6 +3,7 @@
 -export([handle/2, handle_event/3]).
 
 -behaviour(elli_handler).
+-include_lib("elli/include/elli.hrl").
 
 %%
 %% ELLI REQUEST CALLBACK
@@ -12,6 +13,12 @@
     Req :: elli:req(),
     Args :: elli_handler:callback_args(),
     Result :: elli_handler:result().
+handle(#req{path = [~"swagger"]}, _Args) ->
+    F = filename:join(code:priv_dir(elli_openapi), "swagger_ui.html"),
+    {ok, [], {file, F}};
+handle(#req{path = [~"api-docs"]}, _Args) ->
+    F = filename:join(code:priv_dir(elli_openapi), "openapi.json"),
+    {ok, [], {file, F}};
 handle(ElliRequest, _Args) ->
     elli_openapi:route_call(ElliRequest).
 
