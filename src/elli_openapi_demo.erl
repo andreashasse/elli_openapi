@@ -20,7 +20,7 @@ endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
 
 -spec endpoint2(
     #{userId := string(), postId := integer()},
-    #{'User-Agent' := string()},
+    #{'User-Agent' := string(), 'Some-Other' => 1..100},
     #user{}
 ) ->
     {200, #{}, #{something => iodata()}}.

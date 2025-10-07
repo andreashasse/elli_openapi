@@ -241,20 +241,20 @@ to_endpoint(
         end,
     EndpointWithPath = maps:fold(PathFun, Endpoint0, to_map(PathArgs)),
     HeaderFun =
-        fun(Key, Val, EndpointAcc) ->
+        fun({FieldType, Name, Type}, EndpointAcc) when
+            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
+        ->
             HeaderArg =
                 #{
-                    name => Key,
+                    name => atom_to_binary(Name),
                     in => header,
-                    %% FIXME: handle optional headers
-                    required => true,
+                    required => FieldType =:= map_field_exact,
                     module => Module,
-                    schema => Val
+                    schema => Type
                 },
-
             erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
         end,
-    EndpointWithHeaders = maps:fold(HeaderFun, EndpointWithPath, to_map(HeaderArgs)),
+    EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#ed_map.fields),
     Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
     Endpoint2 =
         erldantic_openapi:with_response(Endpoint1, ReturnCode, <<"">>, Module, ReturnBody),
@@ -279,7 +279,8 @@ to_map(#ed_map{fields = Fields}) ->
 endpoints_to_file(RouteEndpoints) ->
     Endpoints =
         lists:map(fun({_Route, Endpoint, _HandlerType}) -> Endpoint end, RouteEndpoints),
-    {ok, EndpointsJson} = erldantic_openapi:endpoints_to_openapi(Endpoints),
+    MetaData = #{title => <<"My API">>, version => <<"1.0.0">>},
+    {ok, EndpointsJson} = erldantic_openapi:endpoints_to_openapi(MetaData, Endpoints),
     Json = json:encode(EndpointsJson),
     file:write_file("priv/openapi.json", Json).
 
@@ -293,7 +294,7 @@ join_function_specs(
                     fields =
                         [
                             #ed_literal{value = ReturnCode},
-                            _ReturnHeaders,
+                            ReturnHeaders,
                             ReturnBody
                         ]
                 }
@@ -306,5 +307,6 @@ join_function_specs(
         header_args = HeaderArgs,
         request_body = Body,
         return_code = ReturnCode,
+        return_headers = ReturnHeaders,
         return_body = ReturnBody
     }.
