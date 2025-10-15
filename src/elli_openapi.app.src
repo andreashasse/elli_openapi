@@ -1,9 +1,8 @@
 {application, elli_openapi, [
-    {description, "An OTP application"},
+    {description, "OpenAPI in Elli using Erldantic"},
     {vsn, "0.1.0"},
     {registered, []},
-    {mod, {elli_openapi_app, []}},
-    {applications, [kernel, stdlib]},
+    {applications, [kernel, stdlib, elli]},
     {env, []},
     {modules, []},
     {licenses, ["Apache-2.0"]},
