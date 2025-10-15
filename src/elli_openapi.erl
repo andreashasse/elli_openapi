@@ -1,6 +1,6 @@
 -module(elli_openapi).
 
--export([demo/0, setup_routes/1, route_call/1]).
+-export([setup_routes/1, route_call/1]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -20,30 +20,6 @@
 
 -type erldantic_openapi__endpoint_spec() :: map().
 
-%% FIXME: Export types from erldantic_openapi.
-
-demo() ->
-    Routes =
-        [
-            {~"POST", ~"/pelle", fun elli_openapi_demo:endpoint/2},
-            {~"GET", ~"/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/3}
-        ],
-    ElliRequest =
-        #req{
-            args = [],
-            method = 'GET',
-            pid = self(),
-            callback = {elli_example_callback, []},
-            raw_path = <<"mojs">>,
-            version = {1, 1},
-            body =
-                ~"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\"}",
-            headers = [{~"User-Agent", ~"Firefox"}],
-            path = [~"user", ~"Andreas", ~"post", ~"2"]
-        },
-    setup_routes(Routes),
-    route_call(ElliRequest).
-
 setup_routes(Routes) ->
     RouteEndpoints =
         lists:map(
@@ -61,9 +37,10 @@ setup_routes(Routes) ->
 
 route_call(ElliRequest) ->
     {Mref, MyMap} = persistent_term:get(?MODULE),
+    %% FIXME: Very poc way to fingure out method
     Method = ensure_binary(elli_request:method(ElliRequest)),
     Path = list_to_tuple(elli_request:path(ElliRequest)),
-    case ets:match_spec_run([{Method, Path}], Mref) of
+    case ets:match_spec_run([{to_erldantic_http_method(Method), Path}], Mref) of
         [{RoutePath, HttpPathArgsList}] ->
             HttpPathArgs = maps:from_list(HttpPathArgsList),
             {Fun, _Endpoint, HandlerType} = maps:get({Method, RoutePath}, MyMap),
