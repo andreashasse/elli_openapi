@@ -16,6 +16,7 @@ format_verify:
 
 test:
 	rebar3 eunit
+	rebar3 ct
 
 proper:
 	rebar3 proper

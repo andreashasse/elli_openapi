@@ -101,7 +101,12 @@ encode_headers(Module, ReturnHeadersType, Headers) ->
     ).
 %% FIXME: very debuggish
 erldantic_error_to_response_body(Errors) ->
-    io_lib:format("Errors: ~p", [Errors]).
+    try
+        iolist_to_binary(io_lib:format("Errors: ~p", [Errors]))
+    catch
+        _:_ ->
+            <<"Error formatting error message">>
+    end.
 
 ensure_binary(Bin) when is_binary(Bin) ->
     Bin;
@@ -121,9 +126,7 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         {ok, DecodePathArgs} ->
             case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
                 {ok, DecodedHeader} ->
-                    Body = elli_request:body(ElliRequest),
-
-                    case erldantic:decode(json, Module, RequestBodyType, Body) of
+                    case decode_body(Module, RequestBodyType, ElliRequest) of
                         {ok, DecodedBody} ->
                             {ok, DecodePathArgs, DecodedHeader, DecodedBody};
                         {error, _} = Error ->
@@ -134,6 +137,42 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
             end;
         {error, _} = Error ->
             Error
+    end.
+
+decode_body(Module, RequestBodyType, ElliRequest) ->
+    Body = elli_request:body(ElliRequest),
+    case get_content_type(ElliRequest) of
+        {ok, <<"application/json">>} ->
+            %% For JSON, decode the body (empty or not)
+            erldantic:decode(json, Module, RequestBodyType, Body);
+        {ok, <<"text/", _/binary>>} ->
+            %% For text/* content types, return the body unparsed as binary
+            {ok, Body};
+        {ok, OtherContentType} ->
+            {error, [
+                {ed_error, [], decode_error, #{
+                    reason => unsupported_content_type,
+                    expected => <<"application/json or text/*">>,
+                    got => OtherContentType
+                }}
+            ]};
+        {error, missing} ->
+            %% No content-type header
+            erldantic:decode(json, Module, RequestBodyType, Body)
+    end.
+
+get_content_type(ElliRequest) ->
+    Headers = elli_request:headers(ElliRequest),
+    error_logger:info_msg("Headers: ~p~n", [Headers]),
+    case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+        {_, ContentTypeHeader} ->
+            %% Extract just the media type, ignoring parameters like charset
+            [MediaType | _] = binary:split(ContentTypeHeader, <<";">>),
+            %% Trim whitespace but keep as binary
+            ContentType = string:trim(MediaType, both, " \t"),
+            {ok, ContentType};
+        false ->
+            {error, missing}
     end.
 
 decode_path_args(Module, PathArgs, PathArgsType) ->

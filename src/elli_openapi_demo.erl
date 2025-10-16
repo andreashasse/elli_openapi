@@ -35,10 +35,10 @@ create_user(#{}, #{}, #{email := Email, name := Name} = Body) ->
 -spec get_user(
     #{userId := binary()},
     #{'Authorization' := binary()},
-    #{}
+    binary()
 ) ->
     {200, #{'ETag' => binary(), 'Cache-Control' => binary()}, #user{}}.
-get_user(#{userId := UserId}, #{'Authorization' := _Token}, #{}) ->
+get_user(#{userId := UserId}, #{'Authorization' := _Token}, ~"") ->
     User = #user{
         id = UserId,
         email = <<"user@example.com">>,
