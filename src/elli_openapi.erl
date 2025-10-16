@@ -76,8 +76,29 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
             {500, [], erldantic_error_to_response_body(ErldanticErrors)}
     end.
 
-encode_headers(_Module, _ReturnHeaders, _Headers) ->
-    {ok, []}.
+encode_headers(Module, ReturnHeadersType, Headers) ->
+    erldantic_util:fold_until_error(
+        fun({FieldType, FieldName, Type}, Acc) when
+            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
+        ->
+            case maps:find(FieldName, Headers) of
+                {ok, HeaderValue} ->
+                    case erldantic:encode(binary_string, Module, Type, HeaderValue) of
+                        {ok, EncodedHeader} ->
+                            HeaderName = atom_to_binary(FieldName),
+                            {ok, [{HeaderName, EncodedHeader} | Acc]};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                error when FieldType =:= map_field_exact ->
+                    {error, {missing_header, FieldName}};
+                error ->
+                    {ok, Acc}
+            end
+        end,
+        [],
+        ReturnHeadersType#ed_map.fields
+    ).
 %% FIXME: very debuggish
 erldantic_error_to_response_body(Errors) ->
     io_lib:format("Errors: ~p", [Errors]).

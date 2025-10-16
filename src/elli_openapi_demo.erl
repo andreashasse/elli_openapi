@@ -2,6 +2,8 @@
 
 -export([create_user/3, get_user/3]).
 
+-ignore_xref([create_user/3, get_user/3]).
+
 -compile(nowarn_unused_type).
 
 -record(user, {

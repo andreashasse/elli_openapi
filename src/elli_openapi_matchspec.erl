@@ -2,6 +2,8 @@
 
 -export([route_to_matchspec/1, routes_to_matchspecs/1]).
 
+-ignore_xref([route_to_matchspec/1]).
+
 %% @doc Convert a single route to a match specification
 -spec route_to_matchspec({atom(), map(), any()}) -> {tuple(), list(), list()}.
 route_to_matchspec({_Route, #{path := Path, method := Method}, _HandlerType}) ->
