@@ -163,7 +163,6 @@ decode_body(Module, RequestBodyType, ElliRequest) ->
 
 get_content_type(ElliRequest) ->
     Headers = elli_request:headers(ElliRequest),
-    error_logger:info_msg("Headers: ~p~n", [Headers]),
     case lists:keyfind(<<"Content-Type">>, 1, Headers) of
         {_, ContentTypeHeader} ->
             %% Extract just the media type, ignoring parameters like charset
