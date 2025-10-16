@@ -64,11 +64,11 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
     } =
         HandlerType,
     %% FIXME: What was I thinking around http codes
-    case erldantic_json:to_json(Module, ReturnBodyType, Body) of
+    case erldantic:encode(json, Module, ReturnBodyType, Body) of
         {ok, JsonBody} ->
             case encode_headers(Module, ReturnHeadersType, Headers) of
                 {ok, EncodedHeaders} ->
-                    {HttpCode, EncodedHeaders, json:encode(JsonBody)};
+                    {HttpCode, EncodedHeaders, JsonBody};
                 {error, ErldanticErrors} ->
                     {500, [], erldantic_error_to_response_body(ErldanticErrors)}
             end;
@@ -100,12 +100,9 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         {ok, DecodePathArgs} ->
             case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
                 {ok, DecodedHeader} ->
-                    Body =
-                        json:decode(
-                            elli_request:body(ElliRequest)
-                        ),
+                    Body = elli_request:body(ElliRequest),
 
-                    case erldantic_json:from_json(Module, RequestBodyType, Body) of
+                    case erldantic:decode(json, Module, RequestBodyType, Body) of
                         {ok, DecodedBody} ->
                             {ok, DecodePathArgs, DecodedHeader, DecodedBody};
                         {error, _} = Error ->
@@ -123,13 +120,7 @@ decode_path_args(Module, PathArgs, PathArgsType) ->
         fun({map_field_exact, FieldName, Type}, Acc) ->
             case maps:find(FieldName, PathArgs) of
                 {ok, PathArg} ->
-                    case
-                        erldantic_binary_string:from_binary_string(
-                            Module,
-                            Type,
-                            PathArg
-                        )
-                    of
+                    case erldantic:decode(binary_string, Module, Type, PathArg) of
                         {ok, DecodedPathArgs} ->
                             {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
                         {error, _} = Error ->
@@ -149,13 +140,7 @@ decode_headers(Module, HeadersType, Headers) ->
             HeaderName = atom_to_binary(FieldName),
             case lists:keyfind(HeaderName, 1, Headers) of
                 {HeaderName, HeaderValue} ->
-                    case
-                        erldantic_binary_string:from_binary_string(
-                            Module,
-                            Type,
-                            HeaderValue
-                        )
-                    of
+                    case erldantic:decode(binary_string, Module, Type, HeaderValue) of
                         {ok, DecodedHeader} ->
                             {ok, maps:put(FieldName, DecodedHeader, Acc)};
                         {error, _} = Error ->
