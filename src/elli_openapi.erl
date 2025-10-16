@@ -1,6 +1,6 @@
 -module(elli_openapi).
 
--export([demo/0, setup_routes/1, route_call/1]).
+-export([setup_routes/1, route_call/1]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -20,30 +20,6 @@
 
 -type erldantic_openapi__endpoint_spec() :: map().
 
-%% FIXME: Export types from erldantic_openapi.
-
-demo() ->
-    Routes =
-        [
-            {~"POST", ~"/pelle", fun elli_openapi_demo:endpoint/2},
-            {~"GET", ~"/user/{userId}/post/{postId}", fun elli_openapi_demo:endpoint2/3}
-        ],
-    ElliRequest =
-        #req{
-            args = [],
-            method = 'GET',
-            pid = self(),
-            callback = {elli_example_callback, []},
-            raw_path = <<"mojs">>,
-            version = {1, 1},
-            body =
-                ~"{\"access\":[\"read\"],\"first_name\":\"Andreas\",\"last_name\":\"Hasselberg\"}",
-            headers = [{~"User-Agent", ~"Firefox"}],
-            path = [~"user", ~"Andreas", ~"post", ~"2"]
-        },
-    setup_routes(Routes),
-    route_call(ElliRequest).
-
 setup_routes(Routes) ->
     RouteEndpoints =
         lists:map(
@@ -61,9 +37,10 @@ setup_routes(Routes) ->
 
 route_call(ElliRequest) ->
     {Mref, MyMap} = persistent_term:get(?MODULE),
+    %% FIXME: Very poc way to fingure out method
     Method = ensure_binary(elli_request:method(ElliRequest)),
     Path = list_to_tuple(elli_request:path(ElliRequest)),
-    case ets:match_spec_run([{Method, Path}], Mref) of
+    case ets:match_spec_run([{to_erldantic_http_method(Method), Path}], Mref) of
         [{RoutePath, HttpPathArgsList}] ->
             HttpPathArgs = maps:from_list(HttpPathArgsList),
             {Fun, _Endpoint, HandlerType} = maps:get({Method, RoutePath}, MyMap),
@@ -87,11 +64,11 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
     } =
         HandlerType,
     %% FIXME: What was I thinking around http codes
-    case erldantic_json:to_json(Module, ReturnBodyType, Body) of
+    case erldantic:encode(json, Module, ReturnBodyType, Body) of
         {ok, JsonBody} ->
             case encode_headers(Module, ReturnHeadersType, Headers) of
                 {ok, EncodedHeaders} ->
-                    {HttpCode, EncodedHeaders, json:encode(JsonBody)};
+                    {HttpCode, EncodedHeaders, JsonBody};
                 {error, ErldanticErrors} ->
                     {500, [], erldantic_error_to_response_body(ErldanticErrors)}
             end;
@@ -99,11 +76,37 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
             {500, [], erldantic_error_to_response_body(ErldanticErrors)}
     end.
 
-encode_headers(_Module, _ReturnHeaders, _Headers) ->
-    {ok, []}.
+encode_headers(Module, ReturnHeadersType, Headers) ->
+    erldantic_util:fold_until_error(
+        fun({FieldType, FieldName, Type}, Acc) when
+            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
+        ->
+            case maps:find(FieldName, Headers) of
+                {ok, HeaderValue} ->
+                    case erldantic:encode(binary_string, Module, Type, HeaderValue) of
+                        {ok, EncodedHeader} ->
+                            HeaderName = atom_to_binary(FieldName),
+                            {ok, [{HeaderName, EncodedHeader} | Acc]};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                error when FieldType =:= map_field_exact ->
+                    {error, {missing_header, FieldName}};
+                error ->
+                    {ok, Acc}
+            end
+        end,
+        [],
+        ReturnHeadersType#ed_map.fields
+    ).
 %% FIXME: very debuggish
 erldantic_error_to_response_body(Errors) ->
-    io_lib:format("Errors: ~p", [Errors]).
+    try
+        iolist_to_binary(io_lib:format("Errors: ~p", [Errors]))
+    catch
+        _:_ ->
+            <<"Error formatting error message">>
+    end.
 
 ensure_binary(Bin) when is_binary(Bin) ->
     Bin;
@@ -123,12 +126,7 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         {ok, DecodePathArgs} ->
             case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
                 {ok, DecodedHeader} ->
-                    Body =
-                        json:decode(
-                            elli_request:body(ElliRequest)
-                        ),
-
-                    case erldantic_json:from_json(Module, RequestBodyType, Body) of
+                    case decode_body(Module, RequestBodyType, ElliRequest) of
                         {ok, DecodedBody} ->
                             {ok, DecodePathArgs, DecodedHeader, DecodedBody};
                         {error, _} = Error ->
@@ -141,18 +139,47 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
             Error
     end.
 
+decode_body(Module, RequestBodyType, ElliRequest) ->
+    Body = elli_request:body(ElliRequest),
+    case get_content_type(ElliRequest) of
+        {ok, <<"application/json">>} ->
+            %% For JSON, decode the body (empty or not)
+            erldantic:decode(json, Module, RequestBodyType, Body);
+        {ok, <<"text/", _/binary>>} ->
+            %% For text/* content types, return the body unparsed as binary
+            {ok, Body};
+        {ok, OtherContentType} ->
+            {error, [
+                {ed_error, [], decode_error, #{
+                    reason => unsupported_content_type,
+                    expected => <<"application/json or text/*">>,
+                    got => OtherContentType
+                }}
+            ]};
+        {error, missing} ->
+            %% No content-type header
+            erldantic:decode(json, Module, RequestBodyType, Body)
+    end.
+
+get_content_type(ElliRequest) ->
+    Headers = elli_request:headers(ElliRequest),
+    case lists:keyfind(<<"Content-Type">>, 1, Headers) of
+        {_, ContentTypeHeader} ->
+            %% Extract just the media type, ignoring parameters like charset
+            [MediaType | _] = binary:split(ContentTypeHeader, <<";">>),
+            %% Trim whitespace but keep as binary
+            ContentType = string:trim(MediaType, both, " \t"),
+            {ok, ContentType};
+        false ->
+            {error, missing}
+    end.
+
 decode_path_args(Module, PathArgs, PathArgsType) ->
     erldantic_util:fold_until_error(
         fun({map_field_exact, FieldName, Type}, Acc) ->
             case maps:find(FieldName, PathArgs) of
                 {ok, PathArg} ->
-                    case
-                        erldantic_binary_string:from_binary_string(
-                            Module,
-                            Type,
-                            PathArg
-                        )
-                    of
+                    case erldantic:decode(binary_string, Module, Type, PathArg) of
                         {ok, DecodedPathArgs} ->
                             {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
                         {error, _} = Error ->
@@ -172,13 +199,7 @@ decode_headers(Module, HeadersType, Headers) ->
             HeaderName = atom_to_binary(FieldName),
             case lists:keyfind(HeaderName, 1, Headers) of
                 {HeaderName, HeaderValue} ->
-                    case
-                        erldantic_binary_string:from_binary_string(
-                            Module,
-                            Type,
-                            HeaderValue
-                        )
-                    of
+                    case erldantic:decode(binary_string, Module, Type, HeaderValue) of
                         {ok, DecodedHeader} ->
                             {ok, maps:put(FieldName, DecodedHeader, Acc)};
                         {error, _} = Error ->

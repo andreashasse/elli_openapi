@@ -1,37 +1,50 @@
 -module(elli_openapi_demo).
 
--export([endpoint/3, endpoint2/3]).
+-export([create_user/3, get_user/3]).
+
+-ignore_xref([create_user/3, get_user/3]).
 
 -compile(nowarn_unused_type).
 
 -record(user, {
-    first_name :: binary(),
-    last_name :: binary(),
-    age :: integer() | undefined,
-    access :: [read | write | delete]
+    id :: binary(),
+    email :: binary(),
+    name :: binary(),
+    role :: admin | user | guest
 }).
 
--spec endpoint(#{}, #{}, #{name => string(), shirt_size => small | medium | large}) ->
-    {200, [], #{something => string()}}.
-endpoint(#{}, #{}, #{name := Name, shirt_size := Size}) ->
-    {200, [], #{
-        something => "Hello " ++ Name ++ ", your shirt size is " ++ atom_to_list(Size) ++ "!"
-    }}.
+-spec create_user(
+    #{},
+    #{},
+    #{email := binary(), name := binary(), role => admin | user | guest}
+) ->
+    {201, #{'Location' => binary(), 'ETag' => binary()}, #user{}}.
+create_user(#{}, #{}, #{email := Email, name := Name} = Body) ->
+    Role = maps:get(role, Body, user),
+    UserId = <<"user-123">>,
+    User = #user{
+        id = UserId,
+        email = Email,
+        name = Name,
+        role = Role
+    },
+    Location = <<"/api/users/", UserId/binary>>,
+    ETag = <<"\"v1-", UserId/binary, "\"">>,
+    {201, #{'Location' => Location, 'ETag' => ETag}, User}.
 
--spec endpoint2(
-    #{userId := string(), postId := integer()},
-    #{'User-Agent' := string(), 'Some-Other' => 1..100},
-    #user{}
+-spec get_user(
+    #{userId := binary()},
+    #{'Authorization' := binary()},
+    binary()
 ) ->
-    {200, #{}, #{something => iodata()}}.
-endpoint2(
-    #{userId := UserId, postId := PostId},
-    #{'User-Agent' := UserAgent},
-    #user{access = _Access} = User
-) ->
-    Response =
-        io_lib:format(
-            "User ~s with Agent ~p requested post ~p~n~p~n",
-            [UserId, UserAgent, PostId, User]
-        ),
-    {200, #{}, #{something => Response}}.
+    {200, #{'ETag' => binary(), 'Cache-Control' => binary()}, #user{}}.
+get_user(#{userId := UserId}, #{'Authorization' := _Token}, ~"") ->
+    User = #user{
+        id = UserId,
+        email = <<"user@example.com">>,
+        name = <<"John Doe">>,
+        role = user
+    },
+    ETag = <<"\"v1-", UserId/binary, "\"">>,
+    CacheControl = <<"max-age=300, must-revalidate">>,
+    {200, #{'ETag' => ETag, 'Cache-Control' => CacheControl}, User}.
