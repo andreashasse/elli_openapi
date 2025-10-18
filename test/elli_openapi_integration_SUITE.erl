@@ -24,8 +24,13 @@
     update_status_success/1,
     update_status_invalid_value/1,
     update_status_wrong_content_type/1,
+    update_item_success_200/1,
+    update_item_not_found_404/1,
+    update_item_invalid_version_400/1,
+    update_item_conflict_409/1,
     openapi_spec_includes_response_headers/1,
-    openapi_spec_content_types/1
+    openapi_spec_content_types/1,
+    openapi_spec_multi_status/1
 ]).
 
 %%====================================================================
@@ -46,8 +51,13 @@ all() ->
         update_status_success,
         update_status_invalid_value,
         update_status_wrong_content_type,
+        update_item_success_200,
+        update_item_not_found_404,
+        update_item_invalid_version_400,
+        update_item_conflict_409,
         openapi_spec_includes_response_headers,
-        openapi_spec_content_types
+        openapi_spec_content_types,
+        openapi_spec_multi_status
     ].
 
 init_per_suite(Config) ->
@@ -61,7 +71,8 @@ init_per_suite(Config) ->
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
             {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
             {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
-            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3},
+            {<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}
         ],
 
     Port = 8765,
@@ -346,6 +357,101 @@ update_status_wrong_content_type(Config) ->
     ok.
 
 %%====================================================================
+%% Test Cases - Multi-Status Update Item
+%%====================================================================
+
+update_item_success_200(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-123",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Updated Item">>, <<"version">> => 5}),
+
+    Result = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 200, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, Headers, ResponseBody}} = Result,
+
+    ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
+
+    ResponseMap = json:decode(list_to_binary(ResponseBody)),
+    ?assertEqual(list_to_binary(ItemId), maps:get(~"id", ResponseMap)),
+    ?assertEqual(~"Updated Item", maps:get(~"name", ResponseMap)),
+    ?assertEqual(5, maps:get(~"version", ResponseMap)),
+
+    ok.
+
+update_item_not_found_404(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-notfound",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 1}),
+
+    Result = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 404, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, _Headers, ResponseBody}} = Result,
+
+    ResponseMap = json:decode(list_to_binary(ResponseBody)),
+    ?assertEqual(~"Item not found", maps:get(~"message", ResponseMap)),
+    ?assertEqual(~"ITEM_NOT_FOUND", maps:get(~"code", ResponseMap)),
+
+    ok.
+
+update_item_invalid_version_400(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-123",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => -1}),
+
+    Result = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 400, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, _Headers, ResponseBody}} = Result,
+
+    ResponseMap = json:decode(list_to_binary(ResponseBody)),
+    ?assertEqual(~"Version must be non-negative", maps:get(~"message", ResponseMap)),
+    ?assertEqual(~"INVALID_VERSION", maps:get(~"code", ResponseMap)),
+
+    ok.
+
+update_item_conflict_409(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-conflict",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 5}),
+
+    Result = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 409, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, _Headers, ResponseBody}} = Result,
+
+    ResponseMap = json:decode(list_to_binary(ResponseBody)),
+    ?assertEqual(~"Version conflict detected", maps:get(~"message", ResponseMap)),
+    ?assertEqual(~"VERSION_CONFLICT", maps:get(~"code", ResponseMap)),
+
+    ok.
+
+%%====================================================================
 %% Test Cases - OpenAPI Spec
 %%====================================================================
 
@@ -485,5 +591,44 @@ openapi_spec_content_types(_Config) ->
 
     ?assertEqual([<<"application/json">>], maps:keys(UsersReqContent)),
     ?assertEqual([<<"application/json">>], maps:keys(UsersRespContent)),
+
+    ok.
+
+openapi_spec_multi_status(_Config) ->
+    Routes = [{<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    #{
+        paths := #{
+            <<"/api/items/{itemId}">> := #{
+                put := #{
+                    responses := Responses
+                }
+            }
+        }
+    } = Spec,
+
+    %% Verify all 4 status codes are present
+    ?assertMatch(#{<<"200">> := _}, Responses),
+    ?assertMatch(#{<<"400">> := _}, Responses),
+    ?assertMatch(#{<<"404">> := _}, Responses),
+    ?assertMatch(#{<<"409">> := _}, Responses),
+
+    %% Verify 200 response has ETag header and item body
+    #{<<"200">> := Response200} = Responses,
+    ?assertMatch(#{headers := #{<<"ETag">> := _}}, Response200),
+    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response200),
+
+    %% Verify error responses (400, 404, 409) have error_response body
+    #{<<"400">> := Response400} = Responses,
+    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response400),
+
+    #{<<"404">> := Response404} = Responses,
+    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response404),
+
+    #{<<"409">> := Response409} = Responses,
+    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response409),
 
     ok.
