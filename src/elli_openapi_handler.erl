@@ -5,10 +5,6 @@
 -behaviour(elli_handler).
 -include_lib("elli/include/elli.hrl").
 
-%%
-%% ELLI REQUEST CALLBACK
-%%
-
 -spec handle(Req, Args) -> Result when
     Req :: elli:req(),
     Args :: elli_handler:callback_args(),
@@ -21,10 +17,6 @@ handle(#req{path = [~"api-docs"]}, _Args) ->
     {ok, [], {file, F}};
 handle(ElliRequest, _Args) ->
     elli_openapi:route_call(ElliRequest).
-
-%%
-%% ELLI EVENT CALLBACKS
-%%
 
 -spec handle_event(Event, Args, Config) -> ok when
     Event :: elli_handler:event(),

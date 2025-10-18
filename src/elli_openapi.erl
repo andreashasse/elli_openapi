@@ -18,16 +18,20 @@
 
 -type content_type() :: plain | json.
 
+-record(response_spec, {
+    status_code :: integer(),
+    headers :: erldantic:ed_type(),
+    body :: erldantic:ed_type(),
+    content_type :: content_type()
+}).
+
 -record(handler_type, {
     mfa :: mfa(),
     path_args :: #ed_map{},
     header_args :: #ed_map{},
     request_body :: erldantic:ed_type(),
     request_content_type :: content_type(),
-    return_code :: integer(),
-    return_headers :: #ed_map{},
-    return_body :: erldantic:ed_type(),
-    response_content_type :: content_type()
+    responses :: #{integer() => #response_spec{}}
 }).
 
 -type erldantic_openapi__endpoint_spec() :: map().
@@ -70,27 +74,37 @@ route_call(ElliRequest) ->
 check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
     #handler_type{
         mfa = {Module, _, _},
-        return_code = _ReturnCodeType,
-        return_headers = ReturnHeadersType,
-        return_body = ReturnBodyType,
-        response_content_type = ResponseContentType
+        responses = Responses
     } =
         HandlerType,
-    EncodeFormat =
-        case ResponseContentType of
-            plain -> binary_string;
-            json -> json
-        end,
-    case erldantic:encode(EncodeFormat, Module, ReturnBodyType, Body) of
-        {ok, EncodedBody} ->
-            case encode_headers(Module, ReturnHeadersType, Headers) of
-                {ok, EncodedHeaders} ->
-                    {HttpCode, EncodedHeaders, EncodedBody};
+    case maps:find(HttpCode, Responses) of
+        {ok, ResponseSpec} ->
+            #response_spec{
+                headers = ReturnHeadersType,
+                body = ReturnBodyType,
+                content_type = ResponseContentType
+            } = ResponseSpec,
+            EncodeFormat =
+                case ResponseContentType of
+                    plain -> binary_string;
+                    json -> json
+                end,
+            case erldantic:encode(EncodeFormat, Module, ReturnBodyType, Body) of
+                {ok, EncodedBody} ->
+                    case encode_headers(Module, ReturnHeadersType, Headers) of
+                        {ok, EncodedHeaders} ->
+                            {HttpCode, EncodedHeaders, EncodedBody};
+                        {error, ErldanticErrors} ->
+                            {500, [], erldantic_error_to_response_body(ErldanticErrors)}
+                    end;
                 {error, ErldanticErrors} ->
                     {500, [], erldantic_error_to_response_body(ErldanticErrors)}
             end;
-        {error, ErldanticErrors} ->
-            {500, [], erldantic_error_to_response_body(ErldanticErrors)}
+        error ->
+            ErrorMsg = iolist_to_binary(
+                io_lib:format("Invalid status code ~p returned by handler", [HttpCode])
+            ),
+            {500, [], ErrorMsg}
     end.
 
 encode_headers(Module, ReturnHeadersType, Headers) ->
@@ -268,10 +282,7 @@ to_endpoint(
         header_args = HeaderArgs,
         request_body = RequestBody,
         request_content_type = RequestContentType,
-        return_code = ReturnCode,
-        return_headers = ReturnHeaders,
-        return_body = ReturnBody,
-        response_content_type = ResponseContentType
+        responses = Responses
     }
 ) ->
     Endpoint0 = erldantic_openapi:endpoint(to_erldantic_http_method(HttpMethod), Path),
@@ -311,16 +322,26 @@ to_endpoint(
             EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
         ),
 
-    Response0 = erldantic_openapi:response(ReturnCode, ~"Success"),
-    ResponseContentTypeMime = content_type_to_mime(ResponseContentType),
-    Response1 =
-        erldantic_openapi:response_with_body(
-            Response0, Module, ReturnBody, ResponseContentTypeMime
-        ),
+    %% Add all responses from the responses map
+    ResponseFun =
+        fun(_StatusCode, ResponseSpec, EndpointAcc) ->
+            #response_spec{
+                status_code = ReturnCode,
+                headers = ReturnHeaders,
+                body = ReturnBody,
+                content_type = ResponseContentType
+            } = ResponseSpec,
+            Response0 = erldantic_openapi:response(ReturnCode, ~"Success"),
+            ResponseContentTypeMime = content_type_to_mime(ResponseContentType),
+            Response1 =
+                erldantic_openapi:response_with_body(
+                    Response0, Module, ReturnBody, ResponseContentTypeMime
+                ),
+            ResponseWithHeaders = add_response_headers(Response1, Module, ReturnHeaders),
+            erldantic_openapi:add_response(EndpointAcc, ResponseWithHeaders)
+        end,
 
-    ResponseWithHeaders = add_response_headers(Response1, Module, ReturnHeaders),
-
-    Endpoint2 = erldantic_openapi:add_response(Endpoint1, ResponseWithHeaders),
+    Endpoint2 = maps:fold(ResponseFun, Endpoint1, Responses),
     Endpoint2.
 
 add_response_headers(Response, Module, #ed_map{fields = Fields}) ->
@@ -400,26 +421,64 @@ join_function_specs(
     [
         #ed_function_spec{
             args = [PathArgs, HeaderArgs, Body],
-            return =
-                #ed_tuple{
-                    fields =
-                        [
-                            #ed_literal{value = ReturnCode},
-                            ReturnHeaders,
-                            ReturnBody
-                        ]
-                }
+            return = ReturnType
         }
     ]
 ) ->
+    Responses = extract_responses(ReturnType),
     #handler_type{
         mfa = MFA,
         path_args = PathArgs,
         header_args = HeaderArgs,
         request_body = Body,
         request_content_type = infer_content_type(Body),
-        return_code = ReturnCode,
-        return_headers = ReturnHeaders,
-        return_body = ReturnBody,
-        response_content_type = infer_content_type(ReturnBody)
+        responses = Responses
     }.
+
+%% Extract response specifications from return type
+%% Handles both single tuple: {200, Headers, Body}
+%% And union of tuples: {200, H1, B1} | {400, H2, B2} | {404, H3, B3}
+-spec extract_responses(erldantic:ed_type()) -> #{integer() => #response_spec{}}.
+extract_responses(#ed_union{types = Types}) ->
+    %% Union of multiple status codes
+    lists:foldl(
+        fun(TupleType, Acc) ->
+            case extract_single_response(TupleType) of
+                {ok, StatusCode, ResponseSpec} ->
+                    maps:put(StatusCode, ResponseSpec, Acc);
+                error ->
+                    Acc
+            end
+        end,
+        #{},
+        Types
+    );
+extract_responses(TupleType) ->
+    %% Single status code
+    case extract_single_response(TupleType) of
+        {ok, StatusCode, ResponseSpec} ->
+            #{StatusCode => ResponseSpec};
+        error ->
+            #{}
+    end.
+
+-spec extract_single_response(erldantic:ed_type()) ->
+    {ok, integer(), #response_spec{}} | error.
+extract_single_response(
+    #ed_tuple{
+        fields =
+            [
+                #ed_literal{value = ReturnCode},
+                ReturnHeaders,
+                ReturnBody
+            ]
+    }
+) when is_integer(ReturnCode) ->
+    {ok, ReturnCode, #response_spec{
+        status_code = ReturnCode,
+        headers = ReturnHeaders,
+        body = ReturnBody,
+        content_type = infer_content_type(ReturnBody)
+    }};
+extract_single_response(_) ->
+    error.
