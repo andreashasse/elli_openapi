@@ -21,6 +21,9 @@
     get_user_not_found/1,
     create_user_empty_body/1,
     create_user_wrong_content_type/1,
+    update_status_success/1,
+    update_status_invalid_value/1,
+    update_status_wrong_content_type/1,
     openapi_spec_includes_response_headers/1
 ]).
 
@@ -39,6 +42,9 @@ all() ->
         get_user_success,
         get_user_missing_auth_header,
         get_user_not_found,
+        update_status_success,
+        update_status_invalid_value,
+        update_status_wrong_content_type,
         openapi_spec_includes_response_headers
     ].
 
@@ -58,7 +64,8 @@ init_per_suite(Config) ->
         [
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
             {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
-            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3}
+            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
         ],
 
     %% Start Elli with elli_openapi_handler
@@ -307,6 +314,68 @@ get_user_not_found(Config) ->
     ok.
 
 %%====================================================================
+%% Test Cases - Update Status
+%%====================================================================
+
+update_status_success(Config) ->
+    Port = ?config(port, Config),
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+
+    RequestBody = "running",
+
+    {ok, {{_, 200, _}, _Headers, ResponseBody}} =
+        httpc:request(
+            post,
+            {Url, [], "text/plain", RequestBody},
+            [],
+            []
+        ),
+
+    %% Verify response body
+    ?assertEqual("running", ResponseBody),
+
+    ok.
+
+update_status_invalid_value(Config) ->
+    Port = ?config(port, Config),
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+
+    %% Invalid status value
+    RequestBody = "invalid_status",
+
+    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+        httpc:request(
+            post,
+            {Url, [], "text/plain", RequestBody},
+            [],
+            []
+        ),
+
+    %% Should return 400 Bad Request
+    ?assertEqual(400, StatusCode),
+
+    ok.
+
+update_status_wrong_content_type(Config) ->
+    Port = ?config(port, Config),
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+
+    RequestBody = json:encode(#{<<"status">> => <<"running">>}),
+
+    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+        httpc:request(
+            post,
+            {Url, [], "application/json", RequestBody},
+            [],
+            []
+        ),
+
+    %% Should return 400 Bad Request due to content type mismatch
+    ?assertEqual(400, StatusCode),
+
+    ok.
+
+%%====================================================================
 %% Test Cases - OpenAPI Spec
 %%====================================================================
 
@@ -315,7 +384,8 @@ openapi_spec_includes_response_headers(_Config) ->
     Routes =
         [
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3}
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
         ],
 
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
@@ -357,5 +427,20 @@ openapi_spec_includes_response_headers(_Config) ->
     ?assertMatch(#{<<"Cache-Control">> := _}, GetUserHeaders),
     #{<<"Cache-Control">> := CacheControlHeader} = GetUserHeaders,
     ?assertMatch(#{schema := #{type := <<"string">>}}, CacheControlHeader),
+
+    %% Check POST /api/status endpoint - should have text/plain content type
+    #{<<"/api/status">> := StatusPath} = Paths,
+    #{post := StatusPost} = StatusPath,
+
+    %% Check request body content type
+    #{requestBody := StatusRequestBody} = StatusPost,
+    #{content := StatusReqContent} = StatusRequestBody,
+    ?assertMatch(#{<<"text/plain">> := _}, StatusReqContent),
+
+    %% Check response content type
+    #{responses := StatusResponses} = StatusPost,
+    #{<<"200">> := Status200Response} = StatusResponses,
+    #{content := StatusRespContent} = Status200Response,
+    ?assertMatch(#{<<"text/plain">> := _}, StatusRespContent),
 
     ok.

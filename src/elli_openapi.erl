@@ -16,14 +16,18 @@
 
 -compile(nowarn_unused_type).
 
+-type content_type() :: plain | json.
+
 -record(handler_type, {
     mfa :: mfa(),
     path_args :: #ed_map{},
     header_args :: #ed_map{},
     request_body :: erldantic:ed_type(),
+    request_content_type :: content_type(),
     return_code :: integer(),
     return_headers :: #ed_map{},
-    return_body :: erldantic:ed_type()
+    return_body :: erldantic:ed_type(),
+    response_content_type :: content_type()
 }).
 
 -type erldantic_openapi__endpoint_spec() :: map().
@@ -69,15 +73,21 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
         mfa = {Module, _, _},
         return_code = _ReturnCodeType,
         return_headers = ReturnHeadersType,
-        return_body = ReturnBodyType
+        return_body = ReturnBodyType,
+        response_content_type = ResponseContentType
     } =
         HandlerType,
-    %% FIXME: What was I thinking around http codes
-    case erldantic:encode(json, Module, ReturnBodyType, Body) of
-        {ok, JsonBody} ->
+    %% Encode body based on content type
+    EncodeFormat =
+        case ResponseContentType of
+            plain -> binary_string;
+            json -> json
+        end,
+    case erldantic:encode(EncodeFormat, Module, ReturnBodyType, Body) of
+        {ok, EncodedBody} ->
             case encode_headers(Module, ReturnHeadersType, Headers) of
                 {ok, EncodedHeaders} ->
-                    {HttpCode, EncodedHeaders, JsonBody};
+                    {HttpCode, EncodedHeaders, EncodedBody};
                 {error, ErldanticErrors} ->
                     {500, [], erldantic_error_to_response_body(ErldanticErrors)}
             end;
@@ -127,7 +137,8 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         mfa = {Module, _, _},
         path_args = PathArgsType,
         header_args = HeadersType,
-        request_body = RequestBodyType
+        request_body = RequestBodyType,
+        request_content_type = RequestContentType
     } =
         HandlerType,
 
@@ -135,7 +146,7 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         {ok, DecodePathArgs} ->
             case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
                 {ok, DecodedHeader} ->
-                    case decode_body(Module, RequestBodyType, ElliRequest) of
+                    case decode_body(Module, RequestBodyType, RequestContentType, ElliRequest) of
                         {ok, DecodedBody} ->
                             {ok, DecodePathArgs, DecodedHeader, DecodedBody};
                         {error, _} = Error ->
@@ -148,26 +159,41 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
             Error
     end.
 
-decode_body(Module, RequestBodyType, ElliRequest) ->
+decode_body(Module, RequestBodyType, ExpectedContentType, ElliRequest) ->
     Body = elli_request:body(ElliRequest),
-    case get_content_type(ElliRequest) of
-        {ok, <<"application/json">>} ->
-            %% For JSON, decode the body (empty or not)
+    ActualContentType = get_content_type(ElliRequest),
+
+    %% Validate content type matches expectation
+    case {ExpectedContentType, ActualContentType} of
+        {json, {ok, <<"application/json">>}} ->
             erldantic:decode(json, Module, RequestBodyType, Body);
-        {ok, <<"text/", _/binary>>} ->
-            %% For text/* content types, return the body unparsed as binary
-            {ok, Body};
-        {ok, OtherContentType} ->
+        {json, {error, missing}} ->
+            %% No content-type header, assume JSON
+            erldantic:decode(json, Module, RequestBodyType, Body);
+        {plain, {ok, <<"text/", _/binary>>}} ->
+            %% For text/* content types, decode using binary_string
+            erldantic:decode(binary_string, Module, RequestBodyType, Body);
+        {plain, {error, missing}} ->
+            %% No content-type header but expecting plain text
+            erldantic:decode(binary_string, Module, RequestBodyType, Body);
+        {ExpectedType, {ok, ActualType}} ->
+            %% Content type mismatch
+            ExpectedMime = content_type_to_mime(ExpectedType),
             {error, [
                 {ed_error, [], decode_error, #{
-                    reason => unsupported_content_type,
-                    expected => <<"application/json or text/*">>,
-                    got => OtherContentType
+                    reason => content_type_mismatch,
+                    expected => ExpectedMime,
+                    got => ActualType
                 }}
             ]};
-        {error, missing} ->
-            %% No content-type header
-            erldantic:decode(json, Module, RequestBodyType, Body)
+        {_, {error, missing}} ->
+            %% This case shouldn't happen based on the above, but handle it
+            {error, [
+                {ed_error, [], decode_error, #{
+                    reason => missing_content_type,
+                    expected => content_type_to_mime(ExpectedContentType)
+                }}
+            ]}
     end.
 
 get_content_type(ElliRequest) ->
@@ -251,9 +277,11 @@ to_endpoint(
         path_args = PathArgs,
         header_args = HeaderArgs,
         request_body = RequestBody,
+        request_content_type = RequestContentType,
         return_code = ReturnCode,
         return_headers = ReturnHeaders,
-        return_body = ReturnBody
+        return_body = ReturnBody,
+        response_content_type = ResponseContentType
     }
 ) ->
     Endpoint0 = erldantic_openapi:endpoint(to_erldantic_http_method(HttpMethod), Path),
@@ -286,11 +314,21 @@ to_endpoint(
             erldantic_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
         end,
     EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#ed_map.fields),
-    Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
+
+    %% Add request body with appropriate content type
+    RequestContentTypeMime = content_type_to_mime(RequestContentType),
+    Endpoint1 =
+        erldantic_openapi:with_request_body(
+            EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
+        ),
 
     %% Build response using the new builder pattern
     Response0 = erldantic_openapi:response(ReturnCode, ~"Success"),
-    Response1 = erldantic_openapi:response_with_body(Response0, Module, ReturnBody),
+    ResponseContentTypeMime = content_type_to_mime(ResponseContentType),
+    Response1 =
+        erldantic_openapi:response_with_body(
+            Response0, Module, ReturnBody, ResponseContentTypeMime
+        ),
 
     %% Add response headers using the new pattern
     ResponseWithHeaders = add_response_headers(Response1, Module, ReturnHeaders),
@@ -352,6 +390,29 @@ endpoints_to_file(MetaData, Routes) ->
     Json = json:encode(EndpointsJson),
     file:write_file("priv/openapi.json", Json).
 
+%% Infer content type from erldantic type
+-spec infer_content_type(erldantic:ed_type()) -> content_type().
+infer_content_type(#ed_simple_type{type = binary}) ->
+    plain;
+infer_content_type(#ed_simple_type{type = nonempty_binary}) ->
+    plain;
+infer_content_type(#ed_simple_type{type = atom}) ->
+    plain;
+infer_content_type(#ed_literal{value = V}) when is_atom(V) -> plain;
+infer_content_type(#ed_union{types = Types}) ->
+    %% If all types in union are atoms/literals, use plain text
+    case lists:all(fun(T) -> infer_content_type(T) =:= plain end, Types) of
+        true -> plain;
+        false -> json
+    end;
+infer_content_type(_) ->
+    json.
+
+%% Convert content_type() to MIME type binary
+-spec content_type_to_mime(content_type()) -> binary().
+content_type_to_mime(plain) -> ~"text/plain";
+content_type_to_mime(json) -> ~"application/json".
+
 join_function_specs(
     MFA,
     [
@@ -374,7 +435,9 @@ join_function_specs(
         path_args = PathArgs,
         header_args = HeaderArgs,
         request_body = Body,
+        request_content_type = infer_content_type(Body),
         return_code = ReturnCode,
         return_headers = ReturnHeaders,
-        return_body = ReturnBody
+        return_body = ReturnBody,
+        response_content_type = infer_content_type(ReturnBody)
     }.
