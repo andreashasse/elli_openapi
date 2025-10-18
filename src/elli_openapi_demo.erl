@@ -56,5 +56,4 @@ echo_text(#{}, #{}, Text) ->
 -spec update_status(#{}, #{}, running | stopped | paused) ->
     {200, #{}, running | stopped | paused}.
 update_status(#{}, #{}, Status) ->
-    %% Echo the status back
     {200, #{}, Status}.

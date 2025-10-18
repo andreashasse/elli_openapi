@@ -24,7 +24,8 @@
     update_status_success/1,
     update_status_invalid_value/1,
     update_status_wrong_content_type/1,
-    openapi_spec_includes_response_headers/1
+    openapi_spec_includes_response_headers/1,
+    openapi_spec_content_types/1
 ]).
 
 %%====================================================================
@@ -45,21 +46,16 @@ all() ->
         update_status_success,
         update_status_invalid_value,
         update_status_wrong_content_type,
-        openapi_spec_includes_response_headers
+        openapi_spec_includes_response_headers,
+        openapi_spec_content_types
     ].
 
 init_per_suite(Config) ->
-    %% Trap exits so we can handle server crashes
     process_flag(trap_exit, true),
-
-    %% Start necessary applications
     {ok, _} = application:ensure_all_started(inets),
     {ok, _} = application:ensure_all_started(elli),
-
-    %% Ensure priv directory exists for openapi.json generation
     ok = filelib:ensure_dir("priv/openapi.json"),
 
-    %% Define routes
     Routes =
         [
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
@@ -68,7 +64,6 @@ init_per_suite(Config) ->
             {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
         ],
 
-    %% Start Elli with elli_openapi_handler
     Port = 8765,
     ElliOpts =
         [
@@ -87,15 +82,7 @@ end_per_suite(Config) ->
     ok.
 
 init_per_testcase(_TestCase, Config) ->
-    Pid = ?config(elli_pid, Config),
-    case erlang:is_process_alive(Pid) of
-        true ->
-            ct:log("Elli server process ~p is alive", [Pid]),
-            Config;
-        false ->
-            ct:log("ERROR: Elli server process ~p is dead!", [Pid]),
-            {skip, "Elli server process died"}
-    end.
+    Config.
 
 end_per_testcase(_TestCase, _Config) ->
     ok.
@@ -117,19 +104,18 @@ create_user_success(Config) ->
             }
         ),
 
-    {ok, {{_, 201, _}, Headers, ResponseBody}} =
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        ),
+    Result = httpc:request(
+        post,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 201, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, Headers, ResponseBody}} = Result,
 
-    %% Verify response headers
     ?assertMatch({_, _}, lists:keyfind("location", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
 
-    %% Verify response body
     ResponseMap = json:decode(list_to_binary(ResponseBody)),
     ?assertEqual(<<"user-123">>, maps:get(<<"id">>, ResponseMap)),
     ?assertEqual(<<"test@example.com">>, maps:get(<<"email">>, ResponseMap)),
@@ -142,7 +128,6 @@ create_user_missing_required_field(Config) ->
     Port = ?config(port, Config),
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
 
-    %% Missing 'email' field
     RequestBody =
         json:encode(
             #{
@@ -151,16 +136,15 @@ create_user_missing_required_field(Config) ->
             }
         ),
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/json", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -168,19 +152,17 @@ create_user_invalid_body_format(Config) ->
     Port = ?config(port, Config),
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
 
-    %% Invalid JSON
     RequestBody = "{ invalid json",
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/json", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -188,7 +170,6 @@ create_user_invalid_role(Config) ->
     Port = ?config(port, Config),
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
 
-    %% Invalid role value
     RequestBody =
         json:encode(
             #{
@@ -198,16 +179,15 @@ create_user_invalid_role(Config) ->
             }
         ),
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/json", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -215,19 +195,17 @@ create_user_empty_body(Config) ->
     Port = ?config(port, Config),
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
 
-    %% Empty body
     RequestBody = "",
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/json", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -237,16 +215,15 @@ create_user_wrong_content_type(Config) ->
 
     RequestBody = "email=test@example.com&name=Test User",
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/x-www-form-urlencoded", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -259,19 +236,18 @@ get_user_success(Config) ->
     UserId = "user-456",
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
 
-    {ok, {{_, 200, _}, Headers, ResponseBody}} =
-        httpc:request(
-            get,
-            {Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]},
-            [],
-            []
-        ),
+    Result = httpc:request(
+        get,
+        {Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]},
+        [],
+        []
+    ),
+    ?assertMatch({ok, {{_, 200, _}, _Headers, _ResponseBody}}, Result),
+    {ok, {_, Headers, ResponseBody}} = Result,
 
-    %% Verify response headers
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("cache-control", 1, Headers)),
 
-    %% Verify response body
     ResponseMap = json:decode(list_to_binary(ResponseBody)),
     ?assertEqual(list_to_binary(UserId), maps:get(~"id", ResponseMap)),
     ?assertEqual(~"user@example.com", maps:get(~"email", ResponseMap)),
@@ -285,7 +261,6 @@ get_user_missing_auth_header(Config) ->
     UserId = "user-456",
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
 
-    %% No Authorization header
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
@@ -299,7 +274,6 @@ get_user_missing_auth_header(Config) ->
 
 get_user_not_found(Config) ->
     Port = ?config(port, Config),
-    %% Request a path that doesn't match any route
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
 
     ?assertMatch(
@@ -323,16 +297,15 @@ update_status_success(Config) ->
 
     RequestBody = "running",
 
-    {ok, {{_, 200, _}, _Headers, ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, "running"}},
         httpc:request(
             post,
             {Url, [], "text/plain", RequestBody},
             [],
             []
-        ),
-
-    %% Verify response body
-    ?assertEqual("running", ResponseBody),
+        )
+    ),
 
     ok.
 
@@ -340,19 +313,17 @@ update_status_invalid_value(Config) ->
     Port = ?config(port, Config),
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
 
-    %% Invalid status value
     RequestBody = "invalid_status",
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "text/plain", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -362,16 +333,15 @@ update_status_wrong_content_type(Config) ->
 
     RequestBody = json:encode(#{<<"status">> => <<"running">>}),
 
-    {ok, {{_, StatusCode, _}, _Headers, _ResponseBody}} =
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
         httpc:request(
             post,
             {Url, [], "application/json", RequestBody},
             [],
             []
-        ),
-
-    %% Should return 400 Bad Request due to content type mismatch
-    ?assertEqual(400, StatusCode),
+        )
+    ),
 
     ok.
 
@@ -380,7 +350,6 @@ update_status_wrong_content_type(Config) ->
 %%====================================================================
 
 openapi_spec_includes_response_headers(_Config) ->
-    %% Generate the OpenAPI spec using the library function
     Routes =
         [
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
@@ -391,56 +360,130 @@ openapi_spec_includes_response_headers(_Config) ->
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
 
-    %% Get the paths (note: erldantic_openapi returns spec with atom keys)
-    #{paths := Paths} = Spec,
+    #{
+        paths := #{
+            <<"/api/users">> := #{
+                post := #{
+                    responses := #{
+                        <<"201">> := #{
+                            headers := UsersHeaders
+                        }
+                    }
+                }
+            }
+        }
+    } = Spec,
 
-    %% Check POST /api/users endpoint - should have Location and ETag headers in 201 response
-    #{<<"/api/users">> := UsersPath} = Paths,
-    #{post := UsersPost} = UsersPath,
-    #{responses := UsersResponses} = UsersPost,
-    #{<<"201">> := Users201Response} = UsersResponses,
-    #{headers := UsersHeaders} = Users201Response,
+    ?assertMatch(
+        #{<<"Location">> := #{schema := #{type := <<"string">>}}},
+        UsersHeaders
+    ),
+    ?assertMatch(
+        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
+        UsersHeaders
+    ),
 
-    %% Verify Location header exists
-    ?assertMatch(#{<<"Location">> := _}, UsersHeaders),
-    #{<<"Location">> := LocationHeader} = UsersHeaders,
-    ?assertMatch(#{schema := #{type := <<"string">>}}, LocationHeader),
+    #{
+        paths := #{
+            <<"/api/users/{userId}">> := #{
+                get := #{
+                    responses := #{
+                        <<"200">> := #{
+                            headers := GetUserHeaders
+                        }
+                    }
+                }
+            }
+        }
+    } = Spec,
 
-    %% Verify ETag header exists
-    ?assertMatch(#{<<"ETag">> := _}, UsersHeaders),
-    #{<<"ETag">> := ETagHeader} = UsersHeaders,
-    ?assertMatch(#{schema := #{type := <<"string">>}}, ETagHeader),
+    ?assertMatch(
+        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
+        GetUserHeaders
+    ),
+    ?assertMatch(
+        #{<<"Cache-Control">> := #{schema := #{type := <<"string">>}}},
+        GetUserHeaders
+    ),
 
-    %% Check GET /api/users/{userId} endpoint - should have ETag and Cache-Control headers in 200 response
-    #{<<"/api/users/{userId}">> := GetUserPath} = Paths,
-    #{get := GetUserOp} = GetUserPath,
-    #{responses := GetUserResponses} = GetUserOp,
-    #{<<"200">> := GetUser200Response} = GetUserResponses,
-    #{headers := GetUserHeaders} = GetUser200Response,
+    #{
+        paths := #{
+            <<"/api/status">> := #{
+                post := #{
+                    requestBody := #{content := StatusReqContent},
+                    responses := #{
+                        <<"200">> := #{
+                            content := StatusRespContent
+                        }
+                    }
+                }
+            }
+        }
+    } = Spec,
 
-    %% Verify ETag header exists
-    ?assertMatch(#{<<"ETag">> := _}, GetUserHeaders),
-    #{<<"ETag">> := GetUserETagHeader} = GetUserHeaders,
-    ?assertMatch(#{schema := #{type := <<"string">>}}, GetUserETagHeader),
-
-    %% Verify Cache-Control header exists
-    ?assertMatch(#{<<"Cache-Control">> := _}, GetUserHeaders),
-    #{<<"Cache-Control">> := CacheControlHeader} = GetUserHeaders,
-    ?assertMatch(#{schema := #{type := <<"string">>}}, CacheControlHeader),
-
-    %% Check POST /api/status endpoint - should have text/plain content type
-    #{<<"/api/status">> := StatusPath} = Paths,
-    #{post := StatusPost} = StatusPath,
-
-    %% Check request body content type
-    #{requestBody := StatusRequestBody} = StatusPost,
-    #{content := StatusReqContent} = StatusRequestBody,
     ?assertMatch(#{<<"text/plain">> := _}, StatusReqContent),
-
-    %% Check response content type
-    #{responses := StatusResponses} = StatusPost,
-    #{<<"200">> := Status200Response} = StatusResponses,
-    #{content := StatusRespContent} = Status200Response,
     ?assertMatch(#{<<"text/plain">> := _}, StatusRespContent),
+
+    ok.
+
+openapi_spec_content_types(_Config) ->
+    Routes =
+        [
+            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
+            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
+        ],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    #{
+        paths := #{
+            <<"/api/echo">> := #{
+                post := #{
+                    requestBody := #{content := EchoReqContent},
+                    responses := #{
+                        <<"200">> := #{content := EchoRespContent}
+                    }
+                }
+            }
+        }
+    } = Spec,
+
+    ?assertEqual([<<"text/plain">>], maps:keys(EchoReqContent)),
+    ?assertEqual([<<"text/plain">>], maps:keys(EchoRespContent)),
+
+    #{
+        paths := #{
+            <<"/api/status">> := #{
+                post := #{
+                    requestBody := #{content := StatusReqContent},
+                    responses := #{
+                        <<"200">> := #{content := StatusRespContent}
+                    }
+                }
+            }
+        }
+    } = Spec,
+
+    ?assertEqual([<<"text/plain">>], maps:keys(StatusReqContent)),
+    ?assertEqual([<<"text/plain">>], maps:keys(StatusRespContent)),
+
+    #{
+        paths := #{
+            <<"/api/users">> := #{
+                post := #{
+                    requestBody := #{content := UsersReqContent},
+                    responses := #{
+                        <<"201">> := #{content := UsersRespContent}
+                    }
+                }
+            }
+        }
+    } = Spec,
+
+    ?assertEqual([<<"application/json">>], maps:keys(UsersReqContent)),
+    ?assertEqual([<<"application/json">>], maps:keys(UsersRespContent)),
 
     ok.
