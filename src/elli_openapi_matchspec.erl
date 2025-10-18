@@ -8,10 +8,8 @@
 -spec route_to_matchspec({atom(), map(), any()}) -> {tuple(), list(), list()}.
 route_to_matchspec({_Route, #{path := Path, method := Method}, _HandlerType}) ->
     {PathPattern, Variables} = parse_path(Path),
-    % FIXME: Add method to match head.
     MatchHead = {Method, PathPattern},
     Guards = [],
-    %% Can not have maps in match spec bodies? I'll have to dig out the things I need.
     Body = {{Path, Variables}},
     {MatchHead, Guards, [Body]}.
 
