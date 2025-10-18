@@ -1,6 +1,14 @@
 -module(elli_openapi).
 
--export([setup_routes/1, route_call/1]).
+-export([
+    setup_routes/1,
+    route_call/1,
+    to_handler_type/1,
+    to_endpoint/2,
+    generate_openapi_spec/2
+]).
+
+-ignore_xref([to_handler_type/1, to_endpoint/2, generate_openapi_spec/2]).
 
 -include_lib("erldantic/include/erldantic_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
@@ -29,7 +37,8 @@ setup_routes(Routes) ->
             end,
             Routes
         ),
-    endpoints_to_file(RouteEndpoints),
+    MetaData = #{title => ~"My API", version => ~"1.0.0"},
+    endpoints_to_file(MetaData, Routes),
     Mref = to_matchspec(RouteEndpoints),
     MyMap = path_map(RouteEndpoints),
     persistent_term:put(?MODULE, {Mref, MyMap}),
@@ -243,6 +252,7 @@ to_endpoint(
         header_args = HeaderArgs,
         request_body = RequestBody,
         return_code = ReturnCode,
+        return_headers = ReturnHeaders,
         return_body = ReturnBody
     }
 ) ->
@@ -277,9 +287,36 @@ to_endpoint(
         end,
     EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#ed_map.fields),
     Endpoint1 = erldantic_openapi:with_request_body(EndpointWithHeaders, Module, RequestBody),
-    Endpoint2 =
-        erldantic_openapi:with_response(Endpoint1, ReturnCode, <<"">>, Module, ReturnBody),
+
+    %% Build response using the new builder pattern
+    Response0 = erldantic_openapi:response(ReturnCode, ~"Success"),
+    Response1 = erldantic_openapi:response_with_body(Response0, Module, ReturnBody),
+
+    %% Add response headers using the new pattern
+    ResponseWithHeaders = add_response_headers(Response1, Module, ReturnHeaders),
+
+    Endpoint2 = erldantic_openapi:add_response(Endpoint1, ResponseWithHeaders),
     Endpoint2.
+
+%% Helper function to add response headers to a response builder
+add_response_headers(Response, Module, #ed_map{fields = Fields}) ->
+    lists:foldl(
+        fun({FieldType, Name, Type}, ResponseAcc) when
+            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
+        ->
+            HeaderName = atom_to_binary(Name),
+            HeaderSpec = #{
+                required => FieldType =:= map_field_exact,
+                schema => Type
+            },
+            erldantic_openapi:response_with_header(ResponseAcc, HeaderName, Module, HeaderSpec)
+        end,
+        Response,
+        Fields
+    );
+add_response_headers(Response, _Module, _Other) ->
+    %% If ReturnHeaders is not an #ed_map{}, just return the response unchanged
+    Response.
 
 to_erldantic_http_method(~"GET") -> get;
 to_erldantic_http_method(~"POST") -> post;
@@ -297,11 +334,21 @@ to_map(#ed_map{fields = Fields}) ->
         Fields
     ).
 
-endpoints_to_file(RouteEndpoints) ->
+generate_openapi_spec(MetaData, Routes) ->
+    RouteEndpoints =
+        lists:map(
+            fun(Route) ->
+                HandlerType = to_handler_type(Route),
+                {Route, to_endpoint(Route, HandlerType), HandlerType}
+            end,
+            Routes
+        ),
     Endpoints =
         lists:map(fun({_Route, Endpoint, _HandlerType}) -> Endpoint end, RouteEndpoints),
-    MetaData = #{title => <<"My API">>, version => <<"1.0.0">>},
-    {ok, EndpointsJson} = erldantic_openapi:endpoints_to_openapi(MetaData, Endpoints),
+    erldantic_openapi:endpoints_to_openapi(MetaData, Endpoints).
+
+endpoints_to_file(MetaData, Routes) ->
+    {ok, EndpointsJson} = generate_openapi_spec(MetaData, Routes),
     Json = json:encode(EndpointsJson),
     file:write_file("priv/openapi.json", Json).
 

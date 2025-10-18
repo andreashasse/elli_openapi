@@ -5,7 +5,8 @@
 main(_) ->
     Routes = [
         {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-        {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3}
+        {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
+        {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3}
     ],
     Port = 3000,
     ElliOpts = [

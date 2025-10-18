@@ -1,8 +1,8 @@
 -module(elli_openapi_demo).
 
--export([create_user/3, get_user/3]).
+-export([create_user/3, get_user/3, echo_text/3]).
 
--ignore_xref([create_user/3, get_user/3]).
+-ignore_xref([create_user/3, get_user/3, echo_text/3]).
 
 -compile(nowarn_unused_type).
 
@@ -48,3 +48,7 @@ get_user(#{userId := UserId}, #{'Authorization' := _Token}, ~"") ->
     ETag = <<"\"v1-", UserId/binary, "\"">>,
     CacheControl = <<"max-age=300, must-revalidate">>,
     {200, #{'ETag' => ETag, 'Cache-Control' => CacheControl}, User}.
+
+-spec echo_text(#{}, #{}, binary()) -> {200, #{}, binary()}.
+echo_text(#{}, #{}, Text) ->
+    {200, #{}, <<"Echo: ", Text/binary>>}.

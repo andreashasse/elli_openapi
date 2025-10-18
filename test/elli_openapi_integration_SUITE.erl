@@ -20,7 +20,8 @@
     get_user_missing_auth_header/1,
     get_user_not_found/1,
     create_user_empty_body/1,
-    create_user_wrong_content_type/1
+    create_user_wrong_content_type/1,
+    openapi_spec_includes_response_headers/1
 ]).
 
 %%====================================================================
@@ -37,7 +38,8 @@ all() ->
         create_user_wrong_content_type,
         get_user_success,
         get_user_missing_auth_header,
-        get_user_not_found
+        get_user_not_found,
+        openapi_spec_includes_response_headers
     ].
 
 init_per_suite(Config) ->
@@ -55,7 +57,8 @@ init_per_suite(Config) ->
     Routes =
         [
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3}
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
+            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3}
         ],
 
     %% Start Elli with elli_openapi_handler
@@ -301,4 +304,58 @@ get_user_not_found(Config) ->
             []
         )
     ),
+    ok.
+
+%%====================================================================
+%% Test Cases - OpenAPI Spec
+%%====================================================================
+
+openapi_spec_includes_response_headers(_Config) ->
+    %% Generate the OpenAPI spec using the library function
+    Routes =
+        [
+            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3}
+        ],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    %% Get the paths (note: erldantic_openapi returns spec with atom keys)
+    #{paths := Paths} = Spec,
+
+    %% Check POST /api/users endpoint - should have Location and ETag headers in 201 response
+    #{<<"/api/users">> := UsersPath} = Paths,
+    #{post := UsersPost} = UsersPath,
+    #{responses := UsersResponses} = UsersPost,
+    #{<<"201">> := Users201Response} = UsersResponses,
+    #{headers := UsersHeaders} = Users201Response,
+
+    %% Verify Location header exists
+    ?assertMatch(#{<<"Location">> := _}, UsersHeaders),
+    #{<<"Location">> := LocationHeader} = UsersHeaders,
+    ?assertMatch(#{schema := #{type := <<"string">>}}, LocationHeader),
+
+    %% Verify ETag header exists
+    ?assertMatch(#{<<"ETag">> := _}, UsersHeaders),
+    #{<<"ETag">> := ETagHeader} = UsersHeaders,
+    ?assertMatch(#{schema := #{type := <<"string">>}}, ETagHeader),
+
+    %% Check GET /api/users/{userId} endpoint - should have ETag and Cache-Control headers in 200 response
+    #{<<"/api/users/{userId}">> := GetUserPath} = Paths,
+    #{get := GetUserOp} = GetUserPath,
+    #{responses := GetUserResponses} = GetUserOp,
+    #{<<"200">> := GetUser200Response} = GetUserResponses,
+    #{headers := GetUserHeaders} = GetUser200Response,
+
+    %% Verify ETag header exists
+    ?assertMatch(#{<<"ETag">> := _}, GetUserHeaders),
+    #{<<"ETag">> := GetUserETagHeader} = GetUserHeaders,
+    ?assertMatch(#{schema := #{type := <<"string">>}}, GetUserETagHeader),
+
+    %% Verify Cache-Control header exists
+    ?assertMatch(#{<<"Cache-Control">> := _}, GetUserHeaders),
+    #{<<"Cache-Control">> := CacheControlHeader} = GetUserHeaders,
+    ?assertMatch(#{schema := #{type := <<"string">>}}, CacheControlHeader),
+
     ok.

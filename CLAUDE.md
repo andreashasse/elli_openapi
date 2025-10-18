@@ -1,0 +1,2 @@
+- After each change run `make build-test`
+- Use the new binary syntax in erlang. ~"Binary Value" is the new way of writing <<"Binary Value">>.
