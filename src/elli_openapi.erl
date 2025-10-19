@@ -331,7 +331,8 @@ to_endpoint(
                 body = ReturnBody,
                 content_type = ResponseContentType
             } = ResponseSpec,
-            Response0 = erldantic_openapi:response(ReturnCode, ~"Success"),
+            Description = status_code_to_description(ReturnCode),
+            Response0 = erldantic_openapi:response(ReturnCode, Description),
             ResponseContentTypeMime = content_type_to_mime(ResponseContentType),
             Response1 =
                 erldantic_openapi:response_with_body(
@@ -415,6 +416,26 @@ infer_content_type(_) ->
 -spec content_type_to_mime(content_type()) -> binary().
 content_type_to_mime(plain) -> ~"text/plain";
 content_type_to_mime(json) -> ~"application/json".
+
+-spec status_code_to_description(integer()) -> binary().
+status_code_to_description(200) -> ~"Success";
+status_code_to_description(201) -> ~"Created";
+status_code_to_description(202) -> ~"Accepted";
+status_code_to_description(204) -> ~"No Content";
+status_code_to_description(400) -> ~"Bad Request";
+status_code_to_description(401) -> ~"Unauthorized";
+status_code_to_description(403) -> ~"Forbidden";
+status_code_to_description(404) -> ~"Not Found";
+status_code_to_description(409) -> ~"Conflict";
+status_code_to_description(422) -> ~"Unprocessable Entity";
+status_code_to_description(500) -> ~"Internal Server Error";
+status_code_to_description(502) -> ~"Bad Gateway";
+status_code_to_description(503) -> ~"Service Unavailable";
+status_code_to_description(Code) when Code >= 200, Code < 300 -> ~"Success";
+status_code_to_description(Code) when Code >= 300, Code < 400 -> ~"Redirection";
+status_code_to_description(Code) when Code >= 400, Code < 500 -> ~"Client Error";
+status_code_to_description(Code) when Code >= 500, Code < 600 -> ~"Server Error";
+status_code_to_description(_) -> ~"Unknown Status".
 
 join_function_specs(
     MFA,

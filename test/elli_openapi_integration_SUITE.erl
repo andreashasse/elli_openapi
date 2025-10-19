@@ -618,17 +618,23 @@ openapi_spec_multi_status(_Config) ->
 
     %% Verify 200 response has ETag header and item body
     #{<<"200">> := Response200} = Responses,
-    ?assertMatch(#{headers := #{<<"ETag">> := _}}, Response200),
+    ?assertMatch(#{headers := #{<<"ETag">> := _}, description := ~"Success"}, Response200),
     ?assertMatch(#{content := #{<<"application/json">> := _}}, Response200),
 
     %% Verify error responses (400, 404, 409) have error_response body
     #{<<"400">> := Response400} = Responses,
-    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response400),
+    ?assertMatch(
+        #{content := #{<<"application/json">> := _}, description := ~"Bad Request"}, Response400
+    ),
 
     #{<<"404">> := Response404} = Responses,
-    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response404),
+    ?assertMatch(
+        #{content := #{<<"application/json">> := _}, description := ~"Not Found"}, Response404
+    ),
 
     #{<<"409">> := Response409} = Responses,
-    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response409),
+    ?assertMatch(
+        #{content := #{<<"application/json">> := _}, description := ~"Conflict"}, Response409
+    ),
 
     ok.
