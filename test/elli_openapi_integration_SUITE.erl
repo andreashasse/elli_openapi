@@ -115,23 +115,25 @@ create_user_success(Config) ->
             }
         ),
 
-    Result = httpc:request(
+    {ok, {{_, 201, _}, Headers, ResponseBody}} = httpc:request(
         post,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 201, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, Headers, ResponseBody}} = Result,
 
     ?assertMatch({_, _}, lists:keyfind("location", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(<<"user-123">>, maps:get(<<"id">>, ResponseMap)),
-    ?assertEqual(<<"test@example.com">>, maps:get(<<"email">>, ResponseMap)),
-    ?assertEqual(<<"Test User">>, maps:get(<<"name">>, ResponseMap)),
-    ?assertEqual(<<"admin">>, maps:get(<<"role">>, ResponseMap)),
+    ?assertMatch(
+        #{
+            <<"id">> := <<"user-123">>,
+            <<"email">> := <<"test@example.com">>,
+            <<"name">> := <<"Test User">>,
+            <<"role">> := <<"admin">>
+        },
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -247,23 +249,25 @@ get_user_success(Config) ->
     UserId = "user-456",
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
 
-    Result = httpc:request(
+    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
         get,
         {Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 200, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, Headers, ResponseBody}} = Result,
 
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("cache-control", 1, Headers)),
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(list_to_binary(UserId), maps:get(~"id", ResponseMap)),
-    ?assertEqual(~"user@example.com", maps:get(~"email", ResponseMap)),
-    ?assertEqual(~"John Doe", maps:get(~"name", ResponseMap)),
-    ?assertEqual(~"user", maps:get(~"role", ResponseMap)),
+    ?assertMatch(
+        #{
+            ~"id" := ~"user-456",
+            ~"email" := ~"user@example.com",
+            ~"name" := ~"John Doe",
+            ~"role" := ~"user"
+        },
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -367,21 +371,19 @@ update_item_success_200(Config) ->
 
     RequestBody = json:encode(#{<<"name">> => <<"Updated Item">>, <<"version">> => 5}),
 
-    Result = httpc:request(
+    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
         put,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 200, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, Headers, ResponseBody}} = Result,
 
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(list_to_binary(ItemId), maps:get(~"id", ResponseMap)),
-    ?assertEqual(~"Updated Item", maps:get(~"name", ResponseMap)),
-    ?assertEqual(5, maps:get(~"version", ResponseMap)),
+    ?assertMatch(
+        #{~"id" := ~"item-123", ~"name" := ~"Updated Item", ~"version" := 5},
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -392,18 +394,17 @@ update_item_not_found_404(Config) ->
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 1}),
 
-    Result = httpc:request(
+    {ok, {{_, 404, _}, _Headers, ResponseBody}} = httpc:request(
         put,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 404, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, _Headers, ResponseBody}} = Result,
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(~"Item not found", maps:get(~"message", ResponseMap)),
-    ?assertEqual(~"ITEM_NOT_FOUND", maps:get(~"code", ResponseMap)),
+    ?assertMatch(
+        #{~"message" := ~"Item not found", ~"code" := ~"ITEM_NOT_FOUND"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -414,18 +415,17 @@ update_item_invalid_version_400(Config) ->
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => -1}),
 
-    Result = httpc:request(
+    {ok, {{_, 400, _}, _Headers, ResponseBody}} = httpc:request(
         put,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 400, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, _Headers, ResponseBody}} = Result,
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(~"Version must be non-negative", maps:get(~"message", ResponseMap)),
-    ?assertEqual(~"INVALID_VERSION", maps:get(~"code", ResponseMap)),
+    ?assertMatch(
+        #{~"message" := ~"Version must be non-negative", ~"code" := ~"INVALID_VERSION"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -436,18 +436,17 @@ update_item_conflict_409(Config) ->
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 5}),
 
-    Result = httpc:request(
+    {ok, {{_, 409, _}, _Headers, ResponseBody}} = httpc:request(
         put,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 409, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, _Headers, ResponseBody}} = Result,
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(~"Version conflict detected", maps:get(~"message", ResponseMap)),
-    ?assertEqual(~"VERSION_CONFLICT", maps:get(~"code", ResponseMap)),
+    ?assertMatch(
+        #{~"message" := ~"Version conflict detected", ~"code" := ~"VERSION_CONFLICT"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -466,69 +465,47 @@ openapi_spec_includes_response_headers(_Config) ->
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
 
-    #{
-        paths := #{
-            <<"/api/users">> := #{
-                post := #{
-                    responses := #{
-                        <<"201">> := #{
-                            headers := UsersHeaders
+    ?assertMatch(
+        #{
+            paths := #{
+                <<"/api/users">> := #{
+                    post := #{
+                        responses := #{
+                            <<"201">> := #{
+                                headers := #{
+                                    <<"Location">> := #{schema := #{type := <<"string">>}},
+                                    <<"ETag">> := #{schema := #{type := <<"string">>}}
+                                }
+                            }
+                        }
+                    }
+                },
+                <<"/api/users/{userId}">> := #{
+                    get := #{
+                        responses := #{
+                            <<"200">> := #{
+                                headers := #{
+                                    <<"ETag">> := #{schema := #{type := <<"string">>}},
+                                    <<"Cache-Control">> := #{schema := #{type := <<"string">>}}
+                                }
+                            }
+                        }
+                    }
+                },
+                <<"/api/status">> := #{
+                    post := #{
+                        requestBody := #{content := #{<<"text/plain">> := _}},
+                        responses := #{
+                            <<"200">> := #{
+                                content := #{<<"text/plain">> := _}
+                            }
                         }
                     }
                 }
             }
-        }
-    } = Spec,
-
-    ?assertMatch(
-        #{<<"Location">> := #{schema := #{type := <<"string">>}}},
-        UsersHeaders
+        },
+        Spec
     ),
-    ?assertMatch(
-        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
-        UsersHeaders
-    ),
-
-    #{
-        paths := #{
-            <<"/api/users/{userId}">> := #{
-                get := #{
-                    responses := #{
-                        <<"200">> := #{
-                            headers := GetUserHeaders
-                        }
-                    }
-                }
-            }
-        }
-    } = Spec,
-
-    ?assertMatch(
-        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
-        GetUserHeaders
-    ),
-    ?assertMatch(
-        #{<<"Cache-Control">> := #{schema := #{type := <<"string">>}}},
-        GetUserHeaders
-    ),
-
-    #{
-        paths := #{
-            <<"/api/status">> := #{
-                post := #{
-                    requestBody := #{content := StatusReqContent},
-                    responses := #{
-                        <<"200">> := #{
-                            content := StatusRespContent
-                        }
-                    }
-                }
-            }
-        }
-    } = Spec,
-
-    ?assertMatch(#{<<"text/plain">> := _}, StatusReqContent),
-    ?assertMatch(#{<<"text/plain">> := _}, StatusRespContent),
 
     ok.
 
@@ -549,9 +526,19 @@ openapi_spec_content_types(_Config) ->
             <<"/api/echo">> := #{
                 post := #{
                     requestBody := #{content := EchoReqContent},
-                    responses := #{
-                        <<"200">> := #{content := EchoRespContent}
-                    }
+                    responses := #{<<"200">> := #{content := EchoRespContent}}
+                }
+            },
+            <<"/api/status">> := #{
+                post := #{
+                    requestBody := #{content := StatusReqContent},
+                    responses := #{<<"200">> := #{content := StatusRespContent}}
+                }
+            },
+            <<"/api/users">> := #{
+                post := #{
+                    requestBody := #{content := UsersReqContent},
+                    responses := #{<<"201">> := #{content := UsersRespContent}}
                 }
             }
         }
@@ -559,36 +546,8 @@ openapi_spec_content_types(_Config) ->
 
     ?assertEqual([<<"text/plain">>], maps:keys(EchoReqContent)),
     ?assertEqual([<<"text/plain">>], maps:keys(EchoRespContent)),
-
-    #{
-        paths := #{
-            <<"/api/status">> := #{
-                post := #{
-                    requestBody := #{content := StatusReqContent},
-                    responses := #{
-                        <<"200">> := #{content := StatusRespContent}
-                    }
-                }
-            }
-        }
-    } = Spec,
-
     ?assertEqual([<<"text/plain">>], maps:keys(StatusReqContent)),
     ?assertEqual([<<"text/plain">>], maps:keys(StatusRespContent)),
-
-    #{
-        paths := #{
-            <<"/api/users">> := #{
-                post := #{
-                    requestBody := #{content := UsersReqContent},
-                    responses := #{
-                        <<"201">> := #{content := UsersRespContent}
-                    }
-                }
-            }
-        }
-    } = Spec,
-
     ?assertEqual([<<"application/json">>], maps:keys(UsersReqContent)),
     ?assertEqual([<<"application/json">>], maps:keys(UsersRespContent)),
 
@@ -600,41 +559,36 @@ openapi_spec_multi_status(_Config) ->
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
 
-    #{
-        paths := #{
-            <<"/api/items/{itemId}">> := #{
-                put := #{
-                    responses := Responses
+    %% Verify all 4 status codes with proper descriptions and content types
+    ?assertMatch(
+        #{
+            paths := #{
+                <<"/api/items/{itemId}">> := #{
+                    put := #{
+                        responses := #{
+                            <<"200">> := #{
+                                headers := #{<<"ETag">> := _},
+                                description := ~"Success",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"400">> := #{
+                                description := ~"Bad Request",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"404">> := #{
+                                description := ~"Not Found",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"409">> := #{
+                                description := ~"Conflict",
+                                content := #{<<"application/json">> := _}
+                            }
+                        }
+                    }
                 }
             }
-        }
-    } = Spec,
-
-    %% Verify all 4 status codes are present
-    ?assertMatch(#{<<"200">> := _}, Responses),
-    ?assertMatch(#{<<"400">> := _}, Responses),
-    ?assertMatch(#{<<"404">> := _}, Responses),
-    ?assertMatch(#{<<"409">> := _}, Responses),
-
-    %% Verify 200 response has ETag header and item body
-    #{<<"200">> := Response200} = Responses,
-    ?assertMatch(#{headers := #{<<"ETag">> := _}, description := ~"Success"}, Response200),
-    ?assertMatch(#{content := #{<<"application/json">> := _}}, Response200),
-
-    %% Verify error responses (400, 404, 409) have error_response body
-    #{<<"400">> := Response400} = Responses,
-    ?assertMatch(
-        #{content := #{<<"application/json">> := _}, description := ~"Bad Request"}, Response400
-    ),
-
-    #{<<"404">> := Response404} = Responses,
-    ?assertMatch(
-        #{content := #{<<"application/json">> := _}, description := ~"Not Found"}, Response404
-    ),
-
-    #{<<"409">> := Response409} = Responses,
-    ?assertMatch(
-        #{content := #{<<"application/json">> := _}, description := ~"Conflict"}, Response409
+        },
+        Spec
     ),
 
     ok.
