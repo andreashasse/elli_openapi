@@ -24,8 +24,13 @@
     update_status_success/1,
     update_status_invalid_value/1,
     update_status_wrong_content_type/1,
+    update_item_success_200/1,
+    update_item_not_found_404/1,
+    update_item_invalid_version_400/1,
+    update_item_conflict_409/1,
     openapi_spec_includes_response_headers/1,
-    openapi_spec_content_types/1
+    openapi_spec_content_types/1,
+    openapi_spec_multi_status/1
 ]).
 
 %%====================================================================
@@ -46,8 +51,13 @@ all() ->
         update_status_success,
         update_status_invalid_value,
         update_status_wrong_content_type,
+        update_item_success_200,
+        update_item_not_found_404,
+        update_item_invalid_version_400,
+        update_item_conflict_409,
         openapi_spec_includes_response_headers,
-        openapi_spec_content_types
+        openapi_spec_content_types,
+        openapi_spec_multi_status
     ].
 
 init_per_suite(Config) ->
@@ -61,7 +71,8 @@ init_per_suite(Config) ->
             {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
             {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
             {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
-            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3},
+            {<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}
         ],
 
     Port = 8765,
@@ -104,23 +115,25 @@ create_user_success(Config) ->
             }
         ),
 
-    Result = httpc:request(
+    {ok, {{_, 201, _}, Headers, ResponseBody}} = httpc:request(
         post,
         {Url, [], "application/json", RequestBody},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 201, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, Headers, ResponseBody}} = Result,
 
     ?assertMatch({_, _}, lists:keyfind("location", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(<<"user-123">>, maps:get(<<"id">>, ResponseMap)),
-    ?assertEqual(<<"test@example.com">>, maps:get(<<"email">>, ResponseMap)),
-    ?assertEqual(<<"Test User">>, maps:get(<<"name">>, ResponseMap)),
-    ?assertEqual(<<"admin">>, maps:get(<<"role">>, ResponseMap)),
+    ?assertMatch(
+        #{
+            <<"id">> := <<"user-123">>,
+            <<"email">> := <<"test@example.com">>,
+            <<"name">> := <<"Test User">>,
+            <<"role">> := <<"admin">>
+        },
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -236,23 +249,25 @@ get_user_success(Config) ->
     UserId = "user-456",
     Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
 
-    Result = httpc:request(
+    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
         get,
         {Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]},
         [],
         []
     ),
-    ?assertMatch({ok, {{_, 200, _}, _Headers, _ResponseBody}}, Result),
-    {ok, {_, Headers, ResponseBody}} = Result,
 
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("cache-control", 1, Headers)),
 
-    ResponseMap = json:decode(list_to_binary(ResponseBody)),
-    ?assertEqual(list_to_binary(UserId), maps:get(~"id", ResponseMap)),
-    ?assertEqual(~"user@example.com", maps:get(~"email", ResponseMap)),
-    ?assertEqual(~"John Doe", maps:get(~"name", ResponseMap)),
-    ?assertEqual(~"user", maps:get(~"role", ResponseMap)),
+    ?assertMatch(
+        #{
+            ~"id" := ~"user-456",
+            ~"email" := ~"user@example.com",
+            ~"name" := ~"John Doe",
+            ~"role" := ~"user"
+        },
+        json:decode(list_to_binary(ResponseBody))
+    ),
 
     ok.
 
@@ -346,6 +361,96 @@ update_status_wrong_content_type(Config) ->
     ok.
 
 %%====================================================================
+%% Test Cases - Multi-Status Update Item
+%%====================================================================
+
+update_item_success_200(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-123",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Updated Item">>, <<"version">> => 5}),
+
+    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+
+    ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
+
+    ?assertMatch(
+        #{~"id" := ~"item-123", ~"name" := ~"Updated Item", ~"version" := 5},
+        json:decode(list_to_binary(ResponseBody))
+    ),
+
+    ok.
+
+update_item_not_found_404(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-notfound",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 1}),
+
+    {ok, {{_, 404, _}, _Headers, ResponseBody}} = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+
+    ?assertMatch(
+        #{~"message" := ~"Item not found", ~"code" := ~"ITEM_NOT_FOUND"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
+
+    ok.
+
+update_item_invalid_version_400(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-123",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => -1}),
+
+    {ok, {{_, 400, _}, _Headers, ResponseBody}} = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+
+    ?assertMatch(
+        #{~"message" := ~"Version must be non-negative", ~"code" := ~"INVALID_VERSION"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
+
+    ok.
+
+update_item_conflict_409(Config) ->
+    Port = ?config(port, Config),
+    ItemId = "item-conflict",
+    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+
+    RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 5}),
+
+    {ok, {{_, 409, _}, _Headers, ResponseBody}} = httpc:request(
+        put,
+        {Url, [], "application/json", RequestBody},
+        [],
+        []
+    ),
+
+    ?assertMatch(
+        #{~"message" := ~"Version conflict detected", ~"code" := ~"VERSION_CONFLICT"},
+        json:decode(list_to_binary(ResponseBody))
+    ),
+
+    ok.
+
+%%====================================================================
 %% Test Cases - OpenAPI Spec
 %%====================================================================
 
@@ -360,69 +465,47 @@ openapi_spec_includes_response_headers(_Config) ->
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
 
-    #{
-        paths := #{
-            <<"/api/users">> := #{
-                post := #{
-                    responses := #{
-                        <<"201">> := #{
-                            headers := UsersHeaders
+    ?assertMatch(
+        #{
+            paths := #{
+                <<"/api/users">> := #{
+                    post := #{
+                        responses := #{
+                            <<"201">> := #{
+                                headers := #{
+                                    <<"Location">> := #{schema := #{type := <<"string">>}},
+                                    <<"ETag">> := #{schema := #{type := <<"string">>}}
+                                }
+                            }
+                        }
+                    }
+                },
+                <<"/api/users/{userId}">> := #{
+                    get := #{
+                        responses := #{
+                            <<"200">> := #{
+                                headers := #{
+                                    <<"ETag">> := #{schema := #{type := <<"string">>}},
+                                    <<"Cache-Control">> := #{schema := #{type := <<"string">>}}
+                                }
+                            }
+                        }
+                    }
+                },
+                <<"/api/status">> := #{
+                    post := #{
+                        requestBody := #{content := #{<<"text/plain">> := _}},
+                        responses := #{
+                            <<"200">> := #{
+                                content := #{<<"text/plain">> := _}
+                            }
                         }
                     }
                 }
             }
-        }
-    } = Spec,
-
-    ?assertMatch(
-        #{<<"Location">> := #{schema := #{type := <<"string">>}}},
-        UsersHeaders
+        },
+        Spec
     ),
-    ?assertMatch(
-        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
-        UsersHeaders
-    ),
-
-    #{
-        paths := #{
-            <<"/api/users/{userId}">> := #{
-                get := #{
-                    responses := #{
-                        <<"200">> := #{
-                            headers := GetUserHeaders
-                        }
-                    }
-                }
-            }
-        }
-    } = Spec,
-
-    ?assertMatch(
-        #{<<"ETag">> := #{schema := #{type := <<"string">>}}},
-        GetUserHeaders
-    ),
-    ?assertMatch(
-        #{<<"Cache-Control">> := #{schema := #{type := <<"string">>}}},
-        GetUserHeaders
-    ),
-
-    #{
-        paths := #{
-            <<"/api/status">> := #{
-                post := #{
-                    requestBody := #{content := StatusReqContent},
-                    responses := #{
-                        <<"200">> := #{
-                            content := StatusRespContent
-                        }
-                    }
-                }
-            }
-        }
-    } = Spec,
-
-    ?assertMatch(#{<<"text/plain">> := _}, StatusReqContent),
-    ?assertMatch(#{<<"text/plain">> := _}, StatusRespContent),
 
     ok.
 
@@ -443,9 +526,19 @@ openapi_spec_content_types(_Config) ->
             <<"/api/echo">> := #{
                 post := #{
                     requestBody := #{content := EchoReqContent},
-                    responses := #{
-                        <<"200">> := #{content := EchoRespContent}
-                    }
+                    responses := #{<<"200">> := #{content := EchoRespContent}}
+                }
+            },
+            <<"/api/status">> := #{
+                post := #{
+                    requestBody := #{content := StatusReqContent},
+                    responses := #{<<"200">> := #{content := StatusRespContent}}
+                }
+            },
+            <<"/api/users">> := #{
+                post := #{
+                    requestBody := #{content := UsersReqContent},
+                    responses := #{<<"201">> := #{content := UsersRespContent}}
                 }
             }
         }
@@ -453,37 +546,49 @@ openapi_spec_content_types(_Config) ->
 
     ?assertEqual([<<"text/plain">>], maps:keys(EchoReqContent)),
     ?assertEqual([<<"text/plain">>], maps:keys(EchoRespContent)),
-
-    #{
-        paths := #{
-            <<"/api/status">> := #{
-                post := #{
-                    requestBody := #{content := StatusReqContent},
-                    responses := #{
-                        <<"200">> := #{content := StatusRespContent}
-                    }
-                }
-            }
-        }
-    } = Spec,
-
     ?assertEqual([<<"text/plain">>], maps:keys(StatusReqContent)),
     ?assertEqual([<<"text/plain">>], maps:keys(StatusRespContent)),
+    ?assertEqual([<<"application/json">>], maps:keys(UsersReqContent)),
+    ?assertEqual([<<"application/json">>], maps:keys(UsersRespContent)),
 
-    #{
-        paths := #{
-            <<"/api/users">> := #{
-                post := #{
-                    requestBody := #{content := UsersReqContent},
-                    responses := #{
-                        <<"201">> := #{content := UsersRespContent}
+    ok.
+
+openapi_spec_multi_status(_Config) ->
+    Routes = [{<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    %% Verify all 4 status codes with proper descriptions and content types
+    ?assertMatch(
+        #{
+            paths := #{
+                <<"/api/items/{itemId}">> := #{
+                    put := #{
+                        responses := #{
+                            <<"200">> := #{
+                                headers := #{<<"ETag">> := _},
+                                description := ~"Success",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"400">> := #{
+                                description := ~"Bad Request",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"404">> := #{
+                                description := ~"Not Found",
+                                content := #{<<"application/json">> := _}
+                            },
+                            <<"409">> := #{
+                                description := ~"Conflict",
+                                content := #{<<"application/json">> := _}
+                            }
+                        }
                     }
                 }
             }
-        }
-    } = Spec,
-
-    ?assertEqual([<<"application/json">>], maps:keys(UsersReqContent)),
-    ?assertEqual([<<"application/json">>], maps:keys(UsersRespContent)),
+        },
+        Spec
+    ),
 
     ok.

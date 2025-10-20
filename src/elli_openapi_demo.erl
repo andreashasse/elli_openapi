@@ -1,8 +1,8 @@
 -module(elli_openapi_demo).
 
--export([create_user/3, get_user/3, echo_text/3, update_status/3]).
+-export([create_user/3, get_user/3, echo_text/3, update_status/3, update_item/3]).
 
--ignore_xref([create_user/3, get_user/3, echo_text/3, update_status/3]).
+-ignore_xref([create_user/3, get_user/3, echo_text/3, update_status/3, update_item/3]).
 
 -compile(nowarn_unused_type).
 
@@ -57,3 +57,55 @@ echo_text(#{}, #{}, Text) ->
     {200, #{}, running | stopped | paused}.
 update_status(#{}, #{}, Status) ->
     {200, #{}, Status}.
+
+-record(item, {
+    id :: binary(),
+    name :: binary(),
+    version :: integer()
+}).
+
+-record(error_response, {
+    message :: binary(),
+    code :: binary()
+}).
+
+%% Demo endpoint with multiple status codes
+-spec update_item(
+    #{itemId := binary()},
+    #{},
+    #{name := binary(), version := integer()}
+) ->
+    {200, #{'ETag' => binary()}, #item{}}
+    | {400, #{}, #error_response{}}
+    | {404, #{}, #error_response{}}
+    | {409, #{}, #error_response{}}.
+update_item(#{itemId := ItemId}, #{}, #{name := Name, version := Version}) ->
+    case {ItemId, Name, Version} of
+        {~"item-notfound", _, _} ->
+            %% Simulate item not found
+            {404, #{}, #error_response{
+                message = <<"Item not found">>,
+                code = <<"ITEM_NOT_FOUND">>
+            }};
+        {_, _, V} when V < 0 ->
+            %% Invalid version number
+            {400, #{}, #error_response{
+                message = <<"Version must be non-negative">>,
+                code = <<"INVALID_VERSION">>
+            }};
+        {~"item-conflict", _, _} ->
+            %% Simulate version conflict
+            {409, #{}, #error_response{
+                message = <<"Version conflict detected">>,
+                code = <<"VERSION_CONFLICT">>
+            }};
+        {_, _, _} ->
+            %% Success case
+            Item = #item{
+                id = ItemId,
+                name = Name,
+                version = Version
+            },
+            ETag = iolist_to_binary(io_lib:format("\"v~p-~s\"", [Version, ItemId])),
+            {200, #{'ETag' => ETag}, Item}
+    end.
