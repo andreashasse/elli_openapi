@@ -1,5 +1,5 @@
 {application, elli_openapi, [
-    {description, "OpenAPI in Elli using Erldantic"},
+    {description, "OpenAPI in Elli using Spectra"},
     {vsn, "0.1.0"},
     {registered, []},
     {applications, [kernel, stdlib, elli]},

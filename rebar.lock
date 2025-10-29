@@ -5,13 +5,12 @@
               {ref,"c4d1098174cec06bd124855f3a28dfd6eda0a581"},
               "eqwalizer_support"},
   0},
- {<<"erldantic">>,
-  {git,"https://github.com/andreashasse/erldantic.git",
-       {ref,"b33d47b087847c57f947b499f5005e718364543c"}},
-  0}]}.
+ {<<"spectra">>,{pkg,<<"spectra">>,<<"0.1.1">>},0}]}.
 [
 {pkg_hash,[
- {<<"elli">>, <<"089218762A7FF3D20AE81C8E911BD0F73EE4EE0ED85454226D1FC6B4FFF3B4F6">>}]},
+ {<<"elli">>, <<"089218762A7FF3D20AE81C8E911BD0F73EE4EE0ED85454226D1FC6B4FFF3B4F6">>},
+ {<<"spectra">>, <<"DB3DE5D46B25BF608318E6C8FB8EDEDDE25A21F2AC5DD91B41BBC3800E3C8226">>}]},
 {pkg_hash_ext,[
- {<<"elli">>, <<"698B13B33D05661DB9FE7EFCBA41B84825A379CCE86E486CF6AFF9285BE0CCF8">>}]}
+ {<<"elli">>, <<"698B13B33D05661DB9FE7EFCBA41B84825A379CCE86E486CF6AFF9285BE0CCF8">>},
+ {<<"spectra">>, <<"76C684A56D016EA37443D4BCAEEDDBFB20366536F026BDB0B43D3C6C02225D13">>}]}
 ].

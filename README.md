@@ -1,5 +1,5 @@
 # elli_openapi
-Library for building type-safe HTTP APIs with automatic OpenAPI documentation generation using Elli and Erldantic.
+Library for building type-safe HTTP APIs with automatic OpenAPI documentation generation using Elli and Spectra.
 This library is not ready for production use, but it wont take long to finish it.
 
 ## Usage
