@@ -44,11 +44,11 @@ handler_name(PathArgs, Headers, Body) -> {StatusCode, ResponseHeaders, ResponseB
 ### Arguments
 
 1. **PathArgs** (`map()`): URL path parameters extracted from the route
-   - Example: For route `<<"/api/users/{userId}">>`, PathArgs would be `#{userId => <<"123">>}`
+   - Example: For route `<<"/api/users/{userId}">>`, PathArgs would be `#{userId => ...the provided userid...}`
    - Empty map `#{}` if no path parameters
 
 2. **Headers** (`map()`): HTTP request headers with atom keys
-   - Example: `#{'Authorization' => <<"Bearer token">>, 'Content-Type' => <<"application/json">>}`
+   - Example: `#{'Authorization' => ..., 'Content-Type' => ...}`
    - Required headers must be declared in the function spec
 
 3. **Body** (`any()`): Request body, automatically decoded based on the type in your function spec
