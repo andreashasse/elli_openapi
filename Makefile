@@ -1,4 +1,4 @@
-.PHONY: all compile format test cover clean
+.PHONY: all compile format test cover clean doc hank format_verify build-test dialyzer xref type_check check_app_calls hex
 
 all: compile format test cover
 
@@ -17,9 +17,6 @@ format_verify:
 test:
 	rebar3 eunit
 	rebar3 ct
-
-proper:
-	rebar3 proper
 
 cover:
 	rebar3 cover
