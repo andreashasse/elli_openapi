@@ -24,7 +24,10 @@ proper:
 cover:
 	rebar3 cover
 
-build-test: compile xref type_check test hank format_verify cover
+build-test: compile xref type_check test hank check_app_calls format_verify cover dialyzer
+
+dialyzer:
+	rebar3 dialyzer
 
 clean:
 	rebar3 clean
@@ -40,3 +43,13 @@ type_check:
 	else \
 		exit 0; \
 	fi
+
+check_app_calls:
+	rebar3 check_app_calls
+
+doc:
+	rebar3 ex_doc
+
+hex:
+	rebar3 hex build
+	rebar3 hex publish

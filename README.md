@@ -41,8 +41,3 @@ To try out the demo application:
 rebar3 compile
 rebar3 shell
 ```
-
-## TODO
-- [ ] Validate response codes
-- [ ] Clean up the code
-- [ ] How should extra headers (not in spec) be handled?

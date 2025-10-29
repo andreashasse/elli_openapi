@@ -192,13 +192,6 @@ decode_body(Module, RequestBodyType, ExpectedContentType, ElliRequest) ->
                     expected => ExpectedMime,
                     got => ActualType
                 }}
-            ]};
-        {_, {error, missing}} ->
-            {error, [
-                {sp_error, [], decode_error, #{
-                    reason => missing_content_type,
-                    expected => content_type_to_mime(ExpectedContentType)
-                }}
             ]}
     end.
 
@@ -265,7 +258,7 @@ path_map(RouteEndpoints) ->
         RouteEndpoints
     ).
 
--spec to_handler_type({atom(), binary(), fun()}) -> #handler_type{}.
+-spec to_handler_type({binary(), binary(), fun()}) -> #handler_type{}.
 to_handler_type({_HttpMethod, _Path, CallFun}) ->
     {Module, Function, Arity} = MFA = erlang:fun_info_mfa(CallFun),
     TypeInfo = spectra_abstract_code:types_in_module(Module),
