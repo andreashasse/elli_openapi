@@ -62,7 +62,7 @@ jobs:
         run: make hank
 
       - name: Check app calls
-        run: make
+        run: make check_app_calls
 
       - name: Generate coverage report
         run: make cover
