@@ -2,7 +2,7 @@
     {description, "OpenAPI in Elli using Spectra"},
     {vsn, "0.1.0"},
     {registered, []},
-    {applications, [kernel, stdlib, elli]},
+    {applications, [kernel, stdlib, elli, spectra]},
     {env, []},
     {modules, []},
     {licenses, ["Apache-2.0"]},
