@@ -12,6 +12,9 @@
 handle(#req{path = [~"swagger"]}, _Args) ->
     F = filename:join(code:priv_dir(elli_openapi), "swagger_ui.html"),
     {ok, [], {file, F}};
+handle(#req{path = [~"redoc"]}, _Args) ->
+    F = filename:join(code:priv_dir(elli_openapi), "redoc.html"),
+    {ok, [], {file, F}};
 handle(#req{path = [~"api-docs"]}, _Args) ->
     F = filename:join(code:priv_dir(elli_openapi), "openapi.json"),
     {ok, [], {file, F}};
