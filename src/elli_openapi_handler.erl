@@ -16,8 +16,8 @@ handle(#req{path = [~"redoc"]}, _Args) ->
     F = filename:join(code:priv_dir(elli_openapi), "redoc.html"),
     {ok, [], {file, F}};
 handle(#req{path = [~"api-docs"]}, _Args) ->
-    F = filename:join(code:priv_dir(elli_openapi), "openapi.json"),
-    {ok, [], {file, F}};
+    {_Mref, _MyMap, OpenApiJson} = persistent_term:get(elli_openapi),
+    {ok, [{~"Content-Type", ~"application/json"}], OpenApiJson};
 handle(ElliRequest, _Args) ->
     elli_openapi:route_call(ElliRequest).
 

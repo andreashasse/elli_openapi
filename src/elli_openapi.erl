@@ -46,14 +46,15 @@ setup_routes(Routes) ->
             Routes
         ),
     MetaData = #{title => ~"My API", version => ~"1.0.0"},
-    endpoints_to_file(MetaData, Routes),
+    {ok, OpenApiSpec} = generate_openapi_spec(MetaData, Routes),
+    OpenApiJson = json:encode(OpenApiSpec),
     Mref = to_matchspec(RouteEndpoints),
     MyMap = path_map(RouteEndpoints),
-    persistent_term:put(?MODULE, {Mref, MyMap}),
+    persistent_term:put(?MODULE, {Mref, MyMap, OpenApiJson}),
     ok.
 
 route_call(ElliRequest) ->
-    {Mref, MyMap} = persistent_term:get(?MODULE),
+    {Mref, MyMap, _OpenApiJson} = persistent_term:get(?MODULE),
     Method = ensure_binary(elli_request:method(ElliRequest)),
     Path = list_to_tuple(elli_request:path(ElliRequest)),
     case ets:match_spec_run([{to_spectra_http_method(Method), Path}], Mref) of
@@ -384,11 +385,6 @@ generate_openapi_spec(MetaData, Routes) ->
     Endpoints =
         lists:map(fun({_Route, Endpoint, _HandlerType}) -> Endpoint end, RouteEndpoints),
     spectra_openapi:endpoints_to_openapi(MetaData, Endpoints).
-
-endpoints_to_file(MetaData, Routes) ->
-    {ok, EndpointsJson} = generate_openapi_spec(MetaData, Routes),
-    Json = json:encode(EndpointsJson),
-    file:write_file("priv/openapi.json", Json).
 
 -spec infer_content_type(spectra:sp_type()) -> content_type().
 infer_content_type(#sp_simple_type{type = binary}) ->
