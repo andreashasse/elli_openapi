@@ -70,7 +70,6 @@ init_per_suite(Config) ->
     process_flag(trap_exit, true),
     {ok, _} = application:ensure_all_started(inets),
     {ok, _} = application:ensure_all_started(elli),
-    ok = filelib:ensure_dir("priv/openapi.json"),
 
     Routes =
         [
