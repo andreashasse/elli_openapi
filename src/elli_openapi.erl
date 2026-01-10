@@ -388,7 +388,9 @@ generate_openapi_spec(MetaData, Routes) ->
 endpoints_to_file(MetaData, Routes) ->
     {ok, EndpointsJson} = generate_openapi_spec(MetaData, Routes),
     Json = json:encode(EndpointsJson),
-    file:write_file("priv/openapi.json", Json).
+    PrivDir = code:priv_dir(elli_openapi),
+    FilePath = filename:join(PrivDir, "openapi.json"),
+    file:write_file(FilePath, Json).
 
 -spec infer_content_type(spectra:sp_type()) -> content_type().
 infer_content_type(#sp_simple_type{type = binary}) ->
