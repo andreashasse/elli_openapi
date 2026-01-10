@@ -30,7 +30,10 @@
     update_item_conflict_409/1,
     openapi_spec_includes_response_headers/1,
     openapi_spec_content_types/1,
-    openapi_spec_multi_status/1
+    openapi_spec_multi_status/1,
+    swagger_ui_endpoint/1,
+    redoc_endpoint/1,
+    api_docs_endpoint/1
 ]).
 
 %%====================================================================
@@ -57,7 +60,10 @@ all() ->
         update_item_conflict_409,
         openapi_spec_includes_response_headers,
         openapi_spec_content_types,
-        openapi_spec_multi_status
+        openapi_spec_multi_status,
+        swagger_ui_endpoint,
+        redoc_endpoint,
+        api_docs_endpoint
     ].
 
 init_per_suite(Config) ->
@@ -99,12 +105,31 @@ end_per_testcase(_TestCase, _Config) ->
     ok.
 
 %%====================================================================
+%% Helper Functions
+%%====================================================================
+
+url(Config, Path) ->
+    Port = ?config(port, Config),
+    lists:flatten(io_lib:format("http://localhost:~p~s", [Port, Path])).
+
+http_get(Url) ->
+    httpc:request(get, {Url, []}, [], []).
+
+http_get(Url, Headers) ->
+    httpc:request(get, {Url, Headers}, [], []).
+
+http_post(Url, ContentType, Body) ->
+    httpc:request(post, {Url, [], ContentType, Body}, [], []).
+
+http_put(Url, ContentType, Body) ->
+    httpc:request(put, {Url, [], ContentType, Body}, [], []).
+
+%%====================================================================
 %% Test Cases - Create User
 %%====================================================================
 
 create_user_success(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody =
         json:encode(
@@ -115,12 +140,7 @@ create_user_success(Config) ->
             }
         ),
 
-    {ok, {{_, 201, _}, Headers, ResponseBody}} = httpc:request(
-        post,
-        {Url, [], "application/json", RequestBody},
-        [],
-        []
-    ),
+    {ok, {{_, 201, _}, Headers, ResponseBody}} = http_post(Url, "application/json", RequestBody),
 
     ?assertMatch({_, _}, lists:keyfind("location", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
@@ -138,8 +158,7 @@ create_user_success(Config) ->
     ok.
 
 create_user_missing_required_field(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody =
         json:encode(
@@ -151,37 +170,25 @@ create_user_missing_required_field(Config) ->
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/json", RequestBody)
     ),
 
     ok.
 
 create_user_invalid_body_format(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody = "{ invalid json",
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/json", RequestBody)
     ),
 
     ok.
 
 create_user_invalid_role(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody =
         json:encode(
@@ -194,48 +201,31 @@ create_user_invalid_role(Config) ->
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/json", RequestBody)
     ),
 
     ok.
 
 create_user_empty_body(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody = "",
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/json", RequestBody)
     ),
 
     ok.
 
 create_user_wrong_content_type(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     RequestBody = "email=test@example.com&name=Test User",
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/x-www-form-urlencoded", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/x-www-form-urlencoded", RequestBody)
     ),
 
     ok.
@@ -245,16 +235,11 @@ create_user_wrong_content_type(Config) ->
 %%====================================================================
 
 get_user_success(Config) ->
-    Port = ?config(port, Config),
     UserId = "user-456",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
+    Url = url(Config, "/api/users/" ++ UserId),
 
-    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
-        get,
-        {Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]},
-        [],
-        []
-    ),
+    {ok, {{_, 200, _}, Headers, ResponseBody}} =
+        http_get(Url, [{"authorization", "Bearer token123"}, {"content-type", "text/plain"}]),
 
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
     ?assertMatch({_, _}, lists:keyfind("cache-control", 1, Headers)),
@@ -272,33 +257,21 @@ get_user_success(Config) ->
     ok.
 
 get_user_missing_auth_header(Config) ->
-    Port = ?config(port, Config),
     UserId = "user-456",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users/~s", [Port, UserId])),
+    Url = url(Config, "/api/users/" ++ UserId),
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            get,
-            {Url, []},
-            [],
-            []
-        )
+        http_get(Url)
     ),
     ok.
 
 get_user_not_found(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/users", [Port])),
+    Url = url(Config, "/api/users"),
 
     ?assertMatch(
         {ok, {{_, 404, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            get,
-            {Url, [{"authorization", "Bearer token123"}]},
-            [],
-            []
-        )
+        http_get(Url, [{"authorization", "Bearer token123"}])
     ),
     ok.
 
@@ -307,55 +280,37 @@ get_user_not_found(Config) ->
 %%====================================================================
 
 update_status_success(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+    Url = url(Config, "/api/status"),
 
     RequestBody = "running",
 
     ?assertMatch(
         {ok, {{_, 200, _}, _Headers, "running"}},
-        httpc:request(
-            post,
-            {Url, [], "text/plain", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "text/plain", RequestBody)
     ),
 
     ok.
 
 update_status_invalid_value(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+    Url = url(Config, "/api/status"),
 
     RequestBody = "invalid_status",
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "text/plain", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "text/plain", RequestBody)
     ),
 
     ok.
 
 update_status_wrong_content_type(Config) ->
-    Port = ?config(port, Config),
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/status", [Port])),
+    Url = url(Config, "/api/status"),
 
     RequestBody = json:encode(#{<<"status">> => <<"running">>}),
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
-        httpc:request(
-            post,
-            {Url, [], "application/json", RequestBody},
-            [],
-            []
-        )
+        http_post(Url, "application/json", RequestBody)
     ),
 
     ok.
@@ -365,18 +320,12 @@ update_status_wrong_content_type(Config) ->
 %%====================================================================
 
 update_item_success_200(Config) ->
-    Port = ?config(port, Config),
     ItemId = "item-123",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+    Url = url(Config, "/api/items/" ++ ItemId),
 
     RequestBody = json:encode(#{<<"name">> => <<"Updated Item">>, <<"version">> => 5}),
 
-    {ok, {{_, 200, _}, Headers, ResponseBody}} = httpc:request(
-        put,
-        {Url, [], "application/json", RequestBody},
-        [],
-        []
-    ),
+    {ok, {{_, 200, _}, Headers, ResponseBody}} = http_put(Url, "application/json", RequestBody),
 
     ?assertMatch({_, _}, lists:keyfind("etag", 1, Headers)),
 
@@ -388,18 +337,12 @@ update_item_success_200(Config) ->
     ok.
 
 update_item_not_found_404(Config) ->
-    Port = ?config(port, Config),
     ItemId = "item-notfound",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+    Url = url(Config, "/api/items/" ++ ItemId),
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 1}),
 
-    {ok, {{_, 404, _}, _Headers, ResponseBody}} = httpc:request(
-        put,
-        {Url, [], "application/json", RequestBody},
-        [],
-        []
-    ),
+    {ok, {{_, 404, _}, _Headers, ResponseBody}} = http_put(Url, "application/json", RequestBody),
 
     ?assertMatch(
         #{~"message" := ~"Item not found", ~"code" := ~"ITEM_NOT_FOUND"},
@@ -409,18 +352,12 @@ update_item_not_found_404(Config) ->
     ok.
 
 update_item_invalid_version_400(Config) ->
-    Port = ?config(port, Config),
     ItemId = "item-123",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+    Url = url(Config, "/api/items/" ++ ItemId),
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => -1}),
 
-    {ok, {{_, 400, _}, _Headers, ResponseBody}} = httpc:request(
-        put,
-        {Url, [], "application/json", RequestBody},
-        [],
-        []
-    ),
+    {ok, {{_, 400, _}, _Headers, ResponseBody}} = http_put(Url, "application/json", RequestBody),
 
     ?assertMatch(
         #{~"message" := ~"Version must be non-negative", ~"code" := ~"INVALID_VERSION"},
@@ -430,18 +367,12 @@ update_item_invalid_version_400(Config) ->
     ok.
 
 update_item_conflict_409(Config) ->
-    Port = ?config(port, Config),
     ItemId = "item-conflict",
-    Url = lists:flatten(io_lib:format("http://localhost:~p/api/items/~s", [Port, ItemId])),
+    Url = url(Config, "/api/items/" ++ ItemId),
 
     RequestBody = json:encode(#{<<"name">> => <<"Any Name">>, <<"version">> => 5}),
 
-    {ok, {{_, 409, _}, _Headers, ResponseBody}} = httpc:request(
-        put,
-        {Url, [], "application/json", RequestBody},
-        [],
-        []
-    ),
+    {ok, {{_, 409, _}, _Headers, ResponseBody}} = http_put(Url, "application/json", RequestBody),
 
     ?assertMatch(
         #{~"message" := ~"Version conflict detected", ~"code" := ~"VERSION_CONFLICT"},
@@ -591,4 +522,29 @@ openapi_spec_multi_status(_Config) ->
         Spec
     ),
 
+    ok.
+
+%%====================================================================
+%% Test Cases - Documentation Endpoints
+%%====================================================================
+
+swagger_ui_endpoint(Config) ->
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
+        http_get(url(Config, "/swagger"))
+    ),
+    ok.
+
+redoc_endpoint(Config) ->
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
+        http_get(url(Config, "/redoc"))
+    ),
+    ok.
+
+api_docs_endpoint(Config) ->
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
+        http_get(url(Config, "/api-docs"))
+    ),
     ok.
