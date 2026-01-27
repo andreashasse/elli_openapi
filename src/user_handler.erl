@@ -8,7 +8,7 @@
     role :: admin | user | guest
 }).
 
--ignore_xref([create_user/3, get_user/3, handle_event/3]).
+-ignore_xref([create_user/3, get_user/3]).
 -hank([{unnecessary_function_arguments, [{get_user, 3}]}]).
 
 -spec get_user(#{userId := binary()}, #{}, binary()) ->
