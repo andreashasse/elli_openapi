@@ -397,37 +397,39 @@ openapi_spec_includes_response_headers(_Config) ->
 
     ?assertMatch(
         #{
-            paths := #{
+            <<"paths">> := #{
                 <<"/api/users">> := #{
-                    post := #{
-                        responses := #{
+                    <<"post">> := #{
+                        <<"responses">> := #{
                             <<"201">> := #{
-                                headers := #{
-                                    <<"Location">> := #{schema := #{type := <<"string">>}},
-                                    <<"ETag">> := #{schema := #{type := <<"string">>}}
+                                <<"headers">> := #{
+                                    <<"Location">> := #{<<"schema">> := #{type := <<"string">>}},
+                                    <<"ETag">> := #{<<"schema">> := #{type := <<"string">>}}
                                 }
                             }
                         }
                     }
                 },
                 <<"/api/users/{userId}">> := #{
-                    get := #{
-                        responses := #{
+                    <<"get">> := #{
+                        <<"responses">> := #{
                             <<"200">> := #{
-                                headers := #{
-                                    <<"ETag">> := #{schema := #{type := <<"string">>}},
-                                    <<"Cache-Control">> := #{schema := #{type := <<"string">>}}
+                                <<"headers">> := #{
+                                    <<"ETag">> := #{<<"schema">> := #{type := <<"string">>}},
+                                    <<"Cache-Control">> := #{
+                                        <<"schema">> := #{type := <<"string">>}
+                                    }
                                 }
                             }
                         }
                     }
                 },
                 <<"/api/status">> := #{
-                    post := #{
-                        requestBody := #{content := #{<<"text/plain">> := _}},
-                        responses := #{
+                    <<"post">> := #{
+                        <<"requestBody">> := #{<<"content">> := #{<<"text/plain">> := _}},
+                        <<"responses">> := #{
                             <<"200">> := #{
-                                content := #{<<"text/plain">> := _}
+                                <<"content">> := #{<<"text/plain">> := _}
                             }
                         }
                     }
@@ -452,23 +454,23 @@ openapi_spec_content_types(_Config) ->
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
 
     #{
-        paths := #{
+        <<"paths">> := #{
             <<"/api/echo">> := #{
-                post := #{
-                    requestBody := #{content := EchoReqContent},
-                    responses := #{<<"200">> := #{content := EchoRespContent}}
+                <<"post">> := #{
+                    <<"requestBody">> := #{<<"content">> := EchoReqContent},
+                    <<"responses">> := #{<<"200">> := #{<<"content">> := EchoRespContent}}
                 }
             },
             <<"/api/status">> := #{
-                post := #{
-                    requestBody := #{content := StatusReqContent},
-                    responses := #{<<"200">> := #{content := StatusRespContent}}
+                <<"post">> := #{
+                    <<"requestBody">> := #{<<"content">> := StatusReqContent},
+                    <<"responses">> := #{<<"200">> := #{<<"content">> := StatusRespContent}}
                 }
             },
             <<"/api/users">> := #{
-                post := #{
-                    requestBody := #{content := UsersReqContent},
-                    responses := #{<<"201">> := #{content := UsersRespContent}}
+                <<"post">> := #{
+                    <<"requestBody">> := #{<<"content">> := UsersReqContent},
+                    <<"responses">> := #{<<"201">> := #{<<"content">> := UsersRespContent}}
                 }
             }
         }
@@ -492,26 +494,26 @@ openapi_spec_multi_status(_Config) ->
     %% Verify all 4 status codes with proper descriptions and content types
     ?assertMatch(
         #{
-            paths := #{
+            <<"paths">> := #{
                 <<"/api/items/{itemId}">> := #{
-                    put := #{
-                        responses := #{
+                    <<"put">> := #{
+                        <<"responses">> := #{
                             <<"200">> := #{
-                                headers := #{<<"ETag">> := _},
-                                description := ~"Success",
-                                content := #{<<"application/json">> := _}
+                                <<"headers">> := #{<<"ETag">> := _},
+                                <<"description">> := ~"Success",
+                                <<"content">> := #{<<"application/json">> := _}
                             },
                             <<"400">> := #{
-                                description := ~"Bad Request",
-                                content := #{<<"application/json">> := _}
+                                <<"description">> := ~"Bad Request",
+                                <<"content">> := #{<<"application/json">> := _}
                             },
                             <<"404">> := #{
-                                description := ~"Not Found",
-                                content := #{<<"application/json">> := _}
+                                <<"description">> := ~"Not Found",
+                                <<"content">> := #{<<"application/json">> := _}
                             },
                             <<"409">> := #{
-                                description := ~"Conflict",
-                                content := #{<<"application/json">> := _}
+                                <<"description">> := ~"Conflict",
+                                <<"content">> := #{<<"application/json">> := _}
                             }
                         }
                     }
