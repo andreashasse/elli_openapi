@@ -65,7 +65,8 @@ route_call(ElliRequest) ->
                     Response = Fun(PathArgs, Headers, Body),
                     check_and_convert_response(HandlerType, Response);
                 {error, ErldanticErrors} ->
-                    {400, [], spectra_error_to_response_body(ErldanticErrors)}
+                    Module = element(1, HandlerType#handler_type.mfa),
+                    {400, [], sp_error_format:to_json(ErldanticErrors, Module)}
             end;
         [] ->
             {404, [], ~"Not Found"}
@@ -95,10 +96,10 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
                         {ok, EncodedHeaders} ->
                             {HttpCode, EncodedHeaders, EncodedBody};
                         {error, ErldanticErrors} ->
-                            {500, [], spectra_error_to_response_body(ErldanticErrors)}
+                            {500, [], sp_error_format:to_json(ErldanticErrors, Module)}
                     end;
                 {error, ErldanticErrors} ->
-                    {500, [], spectra_error_to_response_body(ErldanticErrors)}
+                    {500, [], sp_error_format:to_json(ErldanticErrors, Module)}
             end;
         error ->
             ErrorMsg = iolist_to_binary(
@@ -132,14 +133,6 @@ encode_headers(Module, ReturnHeadersType, Headers) ->
         [],
         ReturnHeadersType#sp_map.fields
     ).
-
-spectra_error_to_response_body(Errors) ->
-    try
-        iolist_to_binary(io_lib:format("Errors: ~p", [Errors]))
-    catch
-        _:_ ->
-            <<"Error formatting error message">>
-    end.
 
 ensure_binary(Bin) when is_binary(Bin) ->
     Bin;
