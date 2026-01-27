@@ -12,7 +12,6 @@
 
 -include_lib("spectra/include/spectra_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
--include_lib("elli/include/elli.hrl").
 
 -compile(nowarn_unused_type).
 
@@ -110,19 +109,21 @@ check_and_convert_response(HandlerType, {HttpCode, Headers, Body}) ->
 
 encode_headers(Module, ReturnHeadersType, Headers) ->
     spectra_util:fold_until_error(
-        fun({FieldType, FieldName, Type}, Acc) when
-            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
-        ->
+        fun(
+            #literal_map_field{
+                kind = Kind, name = FieldName, binary_name = BinaryName, val_type = Type
+            },
+            Acc
+        ) ->
             case maps:find(FieldName, Headers) of
                 {ok, HeaderValue} ->
                     case spectra:encode(binary_string, Module, Type, HeaderValue) of
                         {ok, EncodedHeader} ->
-                            HeaderName = atom_to_binary(FieldName),
-                            {ok, [{HeaderName, EncodedHeader} | Acc]};
+                            {ok, [{BinaryName, EncodedHeader} | Acc]};
                         {error, _} = Error ->
                             Error
                     end;
-                error when FieldType =:= map_field_exact ->
+                error when Kind =:= exact ->
                     {error, {missing_header, FieldName}};
                 error ->
                     {ok, Acc}
@@ -209,16 +210,16 @@ get_content_type(ElliRequest) ->
 
 decode_path_args(Module, PathArgs, PathArgsType) ->
     spectra_util:fold_until_error(
-        fun({map_field_exact, FieldName, Type}, Acc) ->
-            case maps:find(FieldName, PathArgs) of
-                {ok, PathArg} ->
+        fun(#literal_map_field{name = FieldName, val_type = Type}, Acc) ->
+            case PathArgs of
+                #{FieldName := PathArg} ->
                     case spectra:decode(binary_string, Module, Type, PathArg) of
                         {ok, DecodedPathArgs} ->
-                            {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
+                            {ok, Acc#{FieldName => DecodedPathArgs}};
                         {error, _} = Error ->
                             Error
                     end;
-                error ->
+                #{} ->
                     {error, {missing_path_arg, FieldName}}
             end
         end,
@@ -228,18 +229,24 @@ decode_path_args(Module, PathArgs, PathArgsType) ->
 
 decode_headers(Module, HeadersType, Headers) ->
     spectra_util:fold_until_error(
-        fun({map_field_exact, FieldName, Type}, Acc) ->
-            HeaderName = atom_to_binary(FieldName),
-            case lists:keyfind(HeaderName, 1, Headers) of
-                {HeaderName, HeaderValue} ->
+        fun(
+            #literal_map_field{
+                kind = Kind, name = FieldName, binary_name = BinaryName, val_type = Type
+            },
+            Acc
+        ) ->
+            case lists:keyfind(BinaryName, 1, Headers) of
+                {BinaryName, HeaderValue} ->
                     case spectra:decode(binary_string, Module, Type, HeaderValue) of
                         {ok, DecodedHeader} ->
                             {ok, maps:put(FieldName, DecodedHeader, Acc)};
                         {error, _} = Error ->
                             Error
                     end;
+                false when Kind =:= exact ->
+                    {error, {missing_header, FieldName}};
                 false ->
-                    {error, {missing_header, FieldName}}
+                    {ok, Acc}
             end
         end,
         #{},
@@ -253,7 +260,7 @@ to_matchspec(RouteEndpoints) ->
 path_map(RouteEndpoints) ->
     lists:foldl(
         fun({{Method, Path, Fun}, Endpoint, HandlerType}, Acc) ->
-            maps:put({Method, Path}, {Fun, Endpoint, HandlerType}, Acc)
+            Acc#{{Method, Path} => {Fun, Endpoint, HandlerType}}
         end,
         maps:new(),
         RouteEndpoints
@@ -263,7 +270,7 @@ path_map(RouteEndpoints) ->
 to_handler_type({_HttpMethod, _Path, CallFun}) ->
     {Module, Function, Arity} = MFA = erlang:fun_info_mfa(CallFun),
     TypeInfo = spectra_abstract_code:types_in_module(Module),
-    {ok, FunctionSpecs} = spectra_type_info:get_function(TypeInfo, Function, Arity),
+    {ok, FunctionSpecs} = spectra_type_info:find_function(TypeInfo, Function, Arity),
     join_function_specs(MFA, FunctionSpecs).
 
 -spec to_endpoint({binary(), binary(), fun()}, #handler_type{}) ->
@@ -295,14 +302,14 @@ to_endpoint(
         end,
     EndpointWithPath = maps:fold(PathFun, Endpoint0, to_map(PathArgs)),
     HeaderFun =
-        fun({FieldType, Name, Type}, EndpointAcc) when
-            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
-        ->
+        fun(
+            #literal_map_field{kind = Kind, binary_name = BinaryName, val_type = Type}, EndpointAcc
+        ) ->
             HeaderArg =
                 #{
-                    name => atom_to_binary(Name),
+                    name => BinaryName,
                     in => header,
-                    required => FieldType =:= map_field_exact,
+                    required => Kind =:= exact,
                     module => Module,
                     schema => Type
                 },
@@ -310,11 +317,17 @@ to_endpoint(
         end,
     EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#sp_map.fields),
 
-    RequestContentTypeMime = content_type_to_mime(RequestContentType),
+    %% Only add request body for HTTP methods that support it
     Endpoint1 =
-        spectra_openapi:with_request_body(
-            EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
-        ),
+        case http_method_supports_body(HttpMethod) of
+            true ->
+                RequestContentTypeMime = content_type_to_mime(RequestContentType),
+                spectra_openapi:with_request_body(
+                    EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
+                );
+            false ->
+                EndpointWithHeaders
+        end,
 
     %% Add all responses from the responses map
     ResponseFun =
@@ -341,21 +354,27 @@ to_endpoint(
 
 add_response_headers(Response, Module, #sp_map{fields = Fields}) ->
     lists:foldl(
-        fun({FieldType, Name, Type}, ResponseAcc) when
-            FieldType =:= map_field_exact orelse FieldType =:= map_field_assoc
-        ->
-            HeaderName = atom_to_binary(Name),
+        fun(
+            #literal_map_field{kind = Kind, binary_name = BinaryName, val_type = Type}, ResponseAcc
+        ) ->
             HeaderSpec = #{
-                required => FieldType =:= map_field_exact,
+                required => Kind =:= exact,
                 schema => Type
             },
-            spectra_openapi:response_with_header(ResponseAcc, HeaderName, Module, HeaderSpec)
+            spectra_openapi:response_with_header(ResponseAcc, BinaryName, Module, HeaderSpec)
         end,
         Response,
         Fields
     );
 add_response_headers(Response, _Module, _Other) ->
     Response.
+
+%% HTTP methods that support request bodies
+http_method_supports_body(~"POST") -> true;
+http_method_supports_body(~"PUT") -> true;
+http_method_supports_body(~"PATCH") -> true;
+http_method_supports_body(~"DELETE") -> true;
+http_method_supports_body(_) -> false.
 
 to_spectra_http_method(~"GET") -> get;
 to_spectra_http_method(~"POST") -> post;
@@ -368,7 +387,9 @@ to_spectra_http_method(~"TRACE") -> trace.
 
 to_map(#sp_map{fields = Fields}) ->
     lists:foldl(
-        fun({map_field_exact, Name, Type}, Acc) -> Acc#{atom_to_binary(Name) => Type} end,
+        fun(#literal_map_field{binary_name = BinaryName, val_type = Type}, Acc) ->
+            Acc#{BinaryName => Type}
+        end,
         #{},
         Fields
     ).

@@ -21,9 +21,8 @@ handle(#req{path = [~"api-docs"]}, _Args) ->
 handle(ElliRequest, _Args) ->
     elli_openapi:route_call(ElliRequest).
 
--spec handle_event(Event, Args, Config) -> ok when
+-spec handle_event(Event, Args :: term(), Config) -> ok when
     Event :: elli_handler:event(),
-    Args :: elli_handler:callback_args(),
     Config :: [tuple()].
 handle_event(elli_startup, [], Routes) ->
     Modules =
@@ -37,5 +36,8 @@ handle_event(elli_startup, [], Routes) ->
     lists:foreach(fun code:ensure_loaded/1, lists:usort(Modules)),
     elli_openapi:setup_routes(Routes),
     ok;
-handle_event(_Event, _Args, _Config) ->
+handle_event(request_complete, [Req, ReturnCode, _, _, _], _Config) ->
+    io:format("Req complete: ~s ~p ~n", [elli_request:raw_path(Req), ReturnCode]),
+    ok;
+handle_event(_Event, _Data, _Config) ->
     ok.
