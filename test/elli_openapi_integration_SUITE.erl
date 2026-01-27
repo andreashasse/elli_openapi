@@ -31,6 +31,7 @@
     openapi_spec_includes_response_headers/1,
     openapi_spec_content_types/1,
     openapi_spec_multi_status/1,
+    openapi_spec_get_no_request_body/1,
     swagger_ui_endpoint/1,
     redoc_endpoint/1,
     api_docs_endpoint/1
@@ -61,6 +62,7 @@ all() ->
         openapi_spec_includes_response_headers,
         openapi_spec_content_types,
         openapi_spec_multi_status,
+        openapi_spec_get_no_request_body,
         swagger_ui_endpoint,
         redoc_endpoint,
         api_docs_endpoint
@@ -522,6 +524,30 @@ openapi_spec_multi_status(_Config) ->
         },
         Spec
     ),
+
+    ok.
+
+openapi_spec_get_no_request_body(_Config) ->
+    %% Test that GET requests do not generate requestBody in OpenAPI spec
+    Routes = [
+        {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
+        {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3}
+    ],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    #{<<"paths">> := Paths} = Spec,
+
+    %% Verify GET request has no requestBody
+    #{<<"/api/users/{userId}">> := UserPath} = Paths,
+    #{<<"get">> := GetEndpoint} = UserPath,
+    ?assertNot(maps:is_key(<<"requestBody">>, GetEndpoint)),
+
+    %% Verify POST request has requestBody
+    #{<<"/api/users">> := UsersPath} = Paths,
+    #{<<"post">> := PostEndpoint} = UsersPath,
+    ?assert(maps:is_key(<<"requestBody">>, PostEndpoint)),
 
     ok.
 

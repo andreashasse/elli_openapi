@@ -317,11 +317,17 @@ to_endpoint(
         end,
     EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#sp_map.fields),
 
-    RequestContentTypeMime = content_type_to_mime(RequestContentType),
+    %% Only add request body for HTTP methods that support it
     Endpoint1 =
-        spectra_openapi:with_request_body(
-            EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
-        ),
+        case http_method_supports_body(HttpMethod) of
+            true ->
+                RequestContentTypeMime = content_type_to_mime(RequestContentType),
+                spectra_openapi:with_request_body(
+                    EndpointWithHeaders, Module, RequestBody, RequestContentTypeMime
+                );
+            false ->
+                EndpointWithHeaders
+        end,
 
     %% Add all responses from the responses map
     ResponseFun =
@@ -362,6 +368,13 @@ add_response_headers(Response, Module, #sp_map{fields = Fields}) ->
     );
 add_response_headers(Response, _Module, _Other) ->
     Response.
+
+%% HTTP methods that support request bodies
+http_method_supports_body(~"POST") -> true;
+http_method_supports_body(~"PUT") -> true;
+http_method_supports_body(~"PATCH") -> true;
+http_method_supports_body(~"DELETE") -> true;
+http_method_supports_body(_) -> false.
 
 to_spectra_http_method(~"GET") -> get;
 to_spectra_http_method(~"POST") -> post;
