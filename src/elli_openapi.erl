@@ -12,7 +12,6 @@
 
 -include_lib("spectra/include/spectra_internal.hrl").
 -include_lib("stdlib/include/ms_transform.hrl").
--include_lib("elli/include/elli.hrl").
 
 -compile(nowarn_unused_type).
 
@@ -212,15 +211,15 @@ get_content_type(ElliRequest) ->
 decode_path_args(Module, PathArgs, PathArgsType) ->
     spectra_util:fold_until_error(
         fun(#literal_map_field{name = FieldName, val_type = Type}, Acc) ->
-            case maps:find(FieldName, PathArgs) of
-                {ok, PathArg} ->
+            case PathArgs of
+                #{FieldName := PathArg} ->
                     case spectra:decode(binary_string, Module, Type, PathArg) of
                         {ok, DecodedPathArgs} ->
-                            {ok, maps:put(FieldName, DecodedPathArgs, Acc)};
+                            {ok, Acc#{FieldName => DecodedPathArgs}};
                         {error, _} = Error ->
                             Error
                     end;
-                error ->
+                #{} ->
                     {error, {missing_path_arg, FieldName}}
             end
         end,
@@ -261,7 +260,7 @@ to_matchspec(RouteEndpoints) ->
 path_map(RouteEndpoints) ->
     lists:foldl(
         fun({{Method, Path, Fun}, Endpoint, HandlerType}, Acc) ->
-            maps:put({Method, Path}, {Fun, Endpoint, HandlerType}, Acc)
+            Acc#{{Method, Path} => {Fun, Endpoint, HandlerType}}
         end,
         maps:new(),
         RouteEndpoints

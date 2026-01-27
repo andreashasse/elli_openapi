@@ -17,8 +17,8 @@ This library is not ready for production use, but it wont take long to finish it
 ```erlang
 %% Define your routes
 Routes = [
-    {<<"POST">>, <<"/api/users">>, fun my_handler:create_user/3},
-    {<<"GET">>, <<"/api/users/{userId}">>, fun my_handler:get_user/3}
+    {<<"POST">>, <<"/api/users">>, fun user_handler:create_user/3},
+    {<<"GET">>, <<"/api/users/{userId}">>, fun user_handler:get_user/3}
 ],
 
 %% Configure and start Elli, preferably in you supervisor spec.

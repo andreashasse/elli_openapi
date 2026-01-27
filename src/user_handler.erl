@@ -1,6 +1,6 @@
 -module(user_handler).
 
--export([get_user/3, create_user/3]).
+-export([get_user/3, create_user/3, handle_event/3]).
 
 -record(user, {
     id :: binary(),
@@ -31,3 +31,8 @@ find_user(~"123") ->
     {ok, #user{id = ~"123", name = ~"Alice", role = user}};
 find_user(_) ->
     not_found.
+
+handle_event(Event, Data, Args) ->
+
+    io:format("user_handler received event: ~p ~p ~p ~n", [Event, Data, Args]),
+    ok.
