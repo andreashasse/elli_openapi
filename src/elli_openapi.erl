@@ -2,6 +2,7 @@
 
 -export([
     setup_routes/1,
+    setup_routes/2,
     route_call/1,
     to_handler_type/1,
     to_endpoint/2,
@@ -27,15 +28,20 @@
 -record(handler_type, {
     mfa :: mfa(),
     path_args :: #sp_map{},
+    query_args :: #sp_map{},
     header_args :: #sp_map{},
     request_body :: spectra:sp_type(),
     request_content_type :: content_type(),
-    responses :: #{integer() => #response_spec{}}
+    responses :: #{integer() => #response_spec{}},
+    doc :: spectra:function_doc()
 }).
 
 -type spectra_openapi__endpoint_spec() :: map().
 
 setup_routes(Routes) ->
+    setup_routes(#{title => ~"My API", version => ~"1.0.0"}, Routes).
+
+setup_routes(MetaData, Routes) ->
     RouteEndpoints =
         lists:map(
             fun(Route) ->
@@ -44,7 +50,6 @@ setup_routes(Routes) ->
             end,
             Routes
         ),
-    MetaData = #{title => ~"My API", version => ~"1.0.0"},
     {ok, OpenApiSpec} = generate_openapi_spec(MetaData, Routes),
     OpenApiJson = json:encode(OpenApiSpec),
     Mref = to_matchspec(RouteEndpoints),
@@ -61,8 +66,8 @@ route_call(ElliRequest) ->
             HttpPathArgs = maps:from_list(HttpPathArgsList),
             {Fun, _Endpoint, HandlerType} = maps:get({Method, RoutePath}, MyMap),
             case check_types(HandlerType, HttpPathArgs, ElliRequest) of
-                {ok, PathArgs, Headers, Body} ->
-                    Response = Fun(PathArgs, Headers, Body),
+                {ok, PathArgs, QueryArgs, Headers, Body} ->
+                    Response = Fun(PathArgs, QueryArgs, Headers, Body),
                     check_and_convert_response(HandlerType, Response);
                 {error, ErldanticErrors} ->
                     {400, [], spectra_error_to_response_body(ErldanticErrors)}
@@ -150,6 +155,7 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
     #handler_type{
         mfa = {Module, _, _},
         path_args = PathArgsType,
+        query_args = QueryArgsType,
         header_args = HeadersType,
         request_body = RequestBodyType,
         request_content_type = RequestContentType
@@ -157,12 +163,22 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         HandlerType,
 
     case decode_path_args(Module, PathArgs, PathArgsType) of
-        {ok, DecodePathArgs} ->
-            case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
-                {ok, DecodedHeader} ->
-                    case decode_body(Module, RequestBodyType, RequestContentType, ElliRequest) of
-                        {ok, DecodedBody} ->
-                            {ok, DecodePathArgs, DecodedHeader, DecodedBody};
+        {ok, DecodedPathArgs} ->
+            case decode_query_args(Module, QueryArgsType, ElliRequest) of
+                {ok, DecodedQueryArgs} ->
+                    case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
+                        {ok, DecodedHeaders} ->
+                            case
+                                decode_body(
+                                    Module, RequestBodyType, RequestContentType, ElliRequest
+                                )
+                            of
+                                {ok, DecodedBody} ->
+                                    {ok, DecodedPathArgs, DecodedQueryArgs, DecodedHeaders,
+                                        DecodedBody};
+                                {error, _} = Error ->
+                                    Error
+                            end;
                         {error, _} = Error ->
                             Error
                     end;
@@ -227,6 +243,33 @@ decode_path_args(Module, PathArgs, PathArgsType) ->
         PathArgsType#sp_map.fields
     ).
 
+decode_query_args(Module, QueryArgsType, ElliRequest) ->
+    QueryParams = elli_request:get_args(ElliRequest),
+    spectra_util:fold_until_error(
+        fun(
+            #literal_map_field{
+                kind = Kind, name = FieldName, binary_name = BinaryName, val_type = Type
+            },
+            Acc
+        ) ->
+            case lists:keyfind(BinaryName, 1, QueryParams) of
+                {BinaryName, ParamValue} ->
+                    case spectra:decode(binary_string, Module, Type, ParamValue) of
+                        {ok, DecodedParam} ->
+                            {ok, Acc#{FieldName => DecodedParam}};
+                        {error, _} = Error ->
+                            Error
+                    end;
+                false when Kind =:= exact ->
+                    {error, {missing_query_param, FieldName}};
+                false ->
+                    {ok, Acc}
+            end
+        end,
+        #{},
+        QueryArgsType#sp_map.fields
+    ).
+
 decode_headers(Module, HeadersType, Headers) ->
     spectra_util:fold_until_error(
         fun(
@@ -280,13 +323,16 @@ to_endpoint(
     #handler_type{
         mfa = {Module, _Function, _Arity},
         path_args = PathArgs,
+        query_args = QueryArgs,
         header_args = HeaderArgs,
         request_body = RequestBody,
         request_content_type = RequestContentType,
-        responses = Responses
+        responses = Responses,
+        doc = FunctionDoc
     }
 ) ->
-    Endpoint0 = spectra_openapi:endpoint(to_spectra_http_method(HttpMethod), Path),
+    EndpointDoc = maps:with([summary, description, deprecated], FunctionDoc),
+    Endpoint0 = spectra_openapi:endpoint(to_spectra_http_method(HttpMethod), Path, EndpointDoc),
     PathFun =
         fun(Key, Val, EndpointAcc) ->
             PathArg =
@@ -294,13 +340,25 @@ to_endpoint(
                     name => Key,
                     in => path,
                     required => true,
-                    module => Module,
                     schema => Val
                 },
-
             spectra_openapi:with_parameter(EndpointAcc, Module, PathArg)
         end,
     EndpointWithPath = maps:fold(PathFun, Endpoint0, to_map(PathArgs)),
+    QueryFun =
+        fun(
+            #literal_map_field{kind = Kind, binary_name = BinaryName, val_type = Type}, EndpointAcc
+        ) ->
+            QueryArg =
+                #{
+                    name => BinaryName,
+                    in => query,
+                    required => Kind =:= exact,
+                    schema => Type
+                },
+            spectra_openapi:with_parameter(EndpointAcc, Module, QueryArg)
+        end,
+    EndpointWithQuery = lists:foldl(QueryFun, EndpointWithPath, QueryArgs#sp_map.fields),
     HeaderFun =
         fun(
             #literal_map_field{kind = Kind, binary_name = BinaryName, val_type = Type}, EndpointAcc
@@ -310,12 +368,11 @@ to_endpoint(
                     name => BinaryName,
                     in => header,
                     required => Kind =:= exact,
-                    module => Module,
                     schema => Type
                 },
             spectra_openapi:with_parameter(EndpointAcc, Module, HeaderArg)
         end,
-    EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithPath, HeaderArgs#sp_map.fields),
+    EndpointWithHeaders = lists:foldl(HeaderFun, EndpointWithQuery, HeaderArgs#sp_map.fields),
 
     %% Only add request body for HTTP methods that support it
     Endpoint1 =
@@ -405,7 +462,7 @@ generate_openapi_spec(MetaData, Routes) ->
         ),
     Endpoints =
         lists:map(fun({_Route, Endpoint, _HandlerType}) -> Endpoint end, RouteEndpoints),
-    spectra_openapi:endpoints_to_openapi(MetaData, Endpoints).
+    spectra_openapi:endpoints_to_openapi(MetaData, Endpoints, [pre_encoded]).
 
 -spec infer_content_type(spectra:sp_type()) -> content_type().
 infer_content_type(#sp_simple_type{type = binary}) ->
@@ -451,19 +508,23 @@ join_function_specs(
     MFA,
     [
         #sp_function_spec{
-            args = [PathArgs, HeaderArgs, Body],
-            return = ReturnType
+            args = [PathArgs, QueryArgs, HeaderArgs, Body],
+            return = ReturnType,
+            meta = Meta
         }
     ]
 ) ->
     Responses = extract_responses(ReturnType),
+    Doc = maps:get(doc, Meta, #{}),
     #handler_type{
         mfa = MFA,
         path_args = PathArgs,
+        query_args = QueryArgs,
         header_args = HeaderArgs,
         request_body = Body,
         request_content_type = infer_content_type(Body),
-        responses = Responses
+        responses = Responses,
+        doc = Doc
     }.
 
 %% Extract response specifications from return type

@@ -28,10 +28,15 @@
     update_item_not_found_404/1,
     update_item_invalid_version_400/1,
     update_item_conflict_409/1,
+    list_users_no_query_params/1,
+    list_users_with_query_params/1,
+    list_users_invalid_query_param/1,
     openapi_spec_includes_response_headers/1,
     openapi_spec_content_types/1,
     openapi_spec_multi_status/1,
     openapi_spec_get_no_request_body/1,
+    openapi_spec_query_params/1,
+    openapi_spec_function_doc/1,
     swagger_ui_endpoint/1,
     redoc_endpoint/1,
     api_docs_endpoint/1
@@ -59,10 +64,15 @@ all() ->
         update_item_not_found_404,
         update_item_invalid_version_400,
         update_item_conflict_409,
+        list_users_no_query_params,
+        list_users_with_query_params,
+        list_users_invalid_query_param,
         openapi_spec_includes_response_headers,
         openapi_spec_content_types,
         openapi_spec_multi_status,
         openapi_spec_get_no_request_body,
+        openapi_spec_query_params,
+        openapi_spec_function_doc,
         swagger_ui_endpoint,
         redoc_endpoint,
         api_docs_endpoint
@@ -75,11 +85,12 @@ init_per_suite(Config) ->
 
     Routes =
         [
-            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
-            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
-            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3},
-            {<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}
+            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/4},
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/4},
+            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/4},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/4},
+            {<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/4},
+            {<<"GET">>, <<"/api/users">>, fun elli_openapi_demo:list_users/4}
         ],
 
     Port = 8765,
@@ -268,7 +279,7 @@ get_user_missing_auth_header(Config) ->
     ok.
 
 get_user_not_found(Config) ->
-    Url = url(Config, "/api/users"),
+    Url = url(Config, "/api/nonexistent"),
 
     ?assertMatch(
         {ok, {{_, 404, _}, _Headers, _ResponseBody}},
@@ -389,9 +400,9 @@ update_item_conflict_409(Config) ->
 openapi_spec_includes_response_headers(_Config) ->
     Routes =
         [
-            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
-            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
+            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/4},
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/4},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/4}
         ],
 
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
@@ -446,10 +457,10 @@ openapi_spec_includes_response_headers(_Config) ->
 openapi_spec_content_types(_Config) ->
     Routes =
         [
-            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3},
-            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
-            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/3},
-            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/3}
+            {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/4},
+            {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/4},
+            {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/4},
+            {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/4}
         ],
 
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
@@ -488,7 +499,7 @@ openapi_spec_content_types(_Config) ->
     ok.
 
 openapi_spec_multi_status(_Config) ->
-    Routes = [{<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/3}],
+    Routes = [{<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/4}],
 
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
     {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
@@ -530,8 +541,8 @@ openapi_spec_multi_status(_Config) ->
 openapi_spec_get_no_request_body(_Config) ->
     %% Test that GET requests do not generate requestBody in OpenAPI spec
     Routes = [
-        {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/3},
-        {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/3}
+        {<<"GET">>, <<"/api/users/{userId}">>, fun elli_openapi_demo:get_user/4},
+        {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/4}
     ],
 
     MetaData = #{title => ~"Test API", version => ~"1.0.0"},
@@ -549,6 +560,82 @@ openapi_spec_get_no_request_body(_Config) ->
     #{<<"post">> := PostEndpoint} = UsersPath,
     ?assert(maps:is_key(<<"requestBody">>, PostEndpoint)),
 
+    ok.
+
+%%====================================================================
+%% Test Cases - Query Parameters
+%%====================================================================
+
+list_users_no_query_params(Config) ->
+    Url = url(Config, "/api/users"),
+
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
+        http_get(Url)
+    ),
+    ok.
+
+list_users_with_query_params(Config) ->
+    Url = url(Config, "/api/users?page=2&per_page=5"),
+
+    ?assertMatch(
+        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
+        http_get(Url)
+    ),
+    ok.
+
+list_users_invalid_query_param(Config) ->
+    Url = url(Config, "/api/users?page=notanumber"),
+
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
+        http_get(Url)
+    ),
+    ok.
+
+%%====================================================================
+%% Test Cases - OpenAPI Spec: Query Params and Function Docs
+%%====================================================================
+
+openapi_spec_query_params(_Config) ->
+    Routes = [{<<"GET">>, <<"/api/users">>, fun elli_openapi_demo:list_users/4}],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    #{<<"paths">> := #{<<"/api/users">> := #{<<"get">> := GetEndpoint}}} = Spec,
+    #{<<"parameters">> := Params} = GetEndpoint,
+
+    ParamNames = [maps:get(<<"name">>, P) || P <- Params],
+    ?assert(lists:member(<<"page">>, ParamNames)),
+    ?assert(lists:member(<<"per_page">>, ParamNames)),
+
+    [PageParam] = [P || P <- Params, maps:get(<<"name">>, P) =:= <<"page">>],
+    ?assertEqual(<<"query">>, maps:get(<<"in">>, PageParam)),
+    ?assertEqual(false, maps:get(<<"required">>, PageParam)),
+
+    ok.
+
+openapi_spec_function_doc(_Config) ->
+    Routes = [
+        {<<"POST">>, <<"/api/users">>, fun elli_openapi_demo:create_user/4},
+        {<<"GET">>, <<"/api/users">>, fun elli_openapi_demo:list_users/4}
+    ],
+
+    MetaData = #{title => ~"Test API", version => ~"1.0.0"},
+    {ok, Spec} = elli_openapi:generate_openapi_spec(MetaData, Routes),
+
+    ?assertMatch(
+        #{
+            <<"paths">> := #{
+                <<"/api/users">> := #{
+                    <<"post">> := #{<<"summary">> := <<"Create a new user">>},
+                    <<"get">> := #{<<"summary">> := <<"List users">>}
+                }
+            }
+        },
+        Spec
+    ),
     ok.
 
 %%====================================================================
