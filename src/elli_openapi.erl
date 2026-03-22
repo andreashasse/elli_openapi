@@ -159,34 +159,14 @@ check_types(HandlerType, PathArgs, ElliRequest) ->
         header_args = HeadersType,
         request_body = RequestBodyType,
         request_content_type = RequestContentType
-    } =
-        HandlerType,
-
-    case decode_path_args(Module, PathArgs, PathArgsType) of
-        {ok, DecodedPathArgs} ->
-            case decode_query_args(Module, QueryArgsType, ElliRequest) of
-                {ok, DecodedQueryArgs} ->
-                    case decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)) of
-                        {ok, DecodedHeaders} ->
-                            case
-                                decode_body(
-                                    Module, RequestBodyType, RequestContentType, ElliRequest
-                                )
-                            of
-                                {ok, DecodedBody} ->
-                                    {ok, DecodedPathArgs, DecodedQueryArgs, DecodedHeaders,
-                                        DecodedBody};
-                                {error, _} = Error ->
-                                    Error
-                            end;
-                        {error, _} = Error ->
-                            Error
-                    end;
-                {error, _} = Error ->
-                    Error
-            end;
-        {error, _} = Error ->
-            Error
+    } = HandlerType,
+    maybe
+        {ok, DecodedPathArgs} ?= decode_path_args(Module, PathArgs, PathArgsType),
+        {ok, DecodedQueryArgs} ?= decode_query_args(Module, QueryArgsType, ElliRequest),
+        {ok, DecodedHeaders} ?=
+            decode_headers(Module, HeadersType, elli_request:headers(ElliRequest)),
+        {ok, DecodedBody} ?= decode_body(Module, RequestBodyType, RequestContentType, ElliRequest),
+        {ok, DecodedPathArgs, DecodedQueryArgs, DecodedHeaders, DecodedBody}
     end.
 
 decode_body(Module, RequestBodyType, ExpectedContentType, ElliRequest) ->
