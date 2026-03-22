@@ -1,8 +1,24 @@
 -module(elli_openapi_demo).
 
--export([create_user/4, get_user/4, echo_text/4, update_status/4, update_item/4, list_users/4]).
+-export([
+    create_user/4,
+    get_user/4,
+    echo_text/4,
+    update_status/4,
+    update_item/4,
+    list_users/4,
+    search_users/4
+]).
 
--ignore_xref([create_user/4, get_user/4, echo_text/4, update_status/4, update_item/4, list_users/4]).
+-ignore_xref([
+    create_user/4,
+    get_user/4,
+    echo_text/4,
+    update_status/4,
+    update_item/4,
+    list_users/4,
+    search_users/4
+]).
 
 -compile(nowarn_unused_type).
 
@@ -76,6 +92,8 @@
 ) ->
     {200, #{}, #user_list{}}.
 
+-spec search_users(#{}, #{query := binary()}, #{}, binary()) -> {200, #{}, #user_list{}}.
+
 %%====================================================================
 %% Function definitions
 %%====================================================================
@@ -138,10 +156,12 @@ update_item(#{itemId := ItemId}, #{}, #{}, #{name := Name, version := Version}) 
     end.
 
 list_users(#{}, QueryParams, #{}, ~"") ->
-    _Page = maps:get(page, QueryParams, 1),
-    _PerPage = maps:get(per_page, QueryParams, 20),
+    PerPage = maps:get(per_page, QueryParams, 20),
     Users = [
         #user{id = <<"user-1">>, email = <<"a@example.com">>, name = <<"Alice">>, role = admin},
         #user{id = <<"user-2">>, email = <<"b@example.com">>, name = <<"Bob">>, role = user}
     ],
-    {200, #{}, #user_list{users = Users, total = 2}}.
+    {200, #{}, #user_list{users = Users, total = PerPage}}.
+
+search_users(#{}, #{query := _Query}, #{}, ~"") ->
+    {200, #{}, #user_list{users = [], total = 0}}.

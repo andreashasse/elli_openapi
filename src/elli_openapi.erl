@@ -525,7 +525,16 @@ join_function_specs(
         request_content_type = infer_content_type(Body),
         responses = Responses,
         doc = Doc
-    }.
+    };
+join_function_specs({Module, Function, Arity}, [#sp_function_spec{args = Args}]) ->
+    erlang:error(
+        {handler_wrong_arity, #{
+            mfa => {Module, Function, Arity},
+            expected_args => 4,
+            got_args => length(Args),
+            hint => ~"Handler spec must be: (PathArgs, QueryArgs, Headers, Body) -> Response"
+        }}
+    ).
 
 %% Extract response specifications from return type
 %% Handles both single tuple: {200, Headers, Body}

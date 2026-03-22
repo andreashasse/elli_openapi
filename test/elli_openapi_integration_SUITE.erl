@@ -18,7 +18,7 @@
     create_user_invalid_role/1,
     get_user_success/1,
     get_user_missing_auth_header/1,
-    get_user_not_found/1,
+    unknown_route_returns_404/1,
     create_user_empty_body/1,
     create_user_wrong_content_type/1,
     update_status_success/1,
@@ -31,6 +31,7 @@
     list_users_no_query_params/1,
     list_users_with_query_params/1,
     list_users_invalid_query_param/1,
+    search_users_missing_required_query_param/1,
     openapi_spec_includes_response_headers/1,
     openapi_spec_content_types/1,
     openapi_spec_multi_status/1,
@@ -56,7 +57,7 @@ all() ->
         create_user_wrong_content_type,
         get_user_success,
         get_user_missing_auth_header,
-        get_user_not_found,
+        unknown_route_returns_404,
         update_status_success,
         update_status_invalid_value,
         update_status_wrong_content_type,
@@ -67,6 +68,7 @@ all() ->
         list_users_no_query_params,
         list_users_with_query_params,
         list_users_invalid_query_param,
+        search_users_missing_required_query_param,
         openapi_spec_includes_response_headers,
         openapi_spec_content_types,
         openapi_spec_multi_status,
@@ -90,7 +92,8 @@ init_per_suite(Config) ->
             {<<"POST">>, <<"/api/echo">>, fun elli_openapi_demo:echo_text/4},
             {<<"POST">>, <<"/api/status">>, fun elli_openapi_demo:update_status/4},
             {<<"PUT">>, <<"/api/items/{itemId}">>, fun elli_openapi_demo:update_item/4},
-            {<<"GET">>, <<"/api/users">>, fun elli_openapi_demo:list_users/4}
+            {<<"GET">>, <<"/api/users">>, fun elli_openapi_demo:list_users/4},
+            {<<"GET">>, <<"/api/search">>, fun elli_openapi_demo:search_users/4}
         ],
 
     Port = 8765,
@@ -278,7 +281,7 @@ get_user_missing_auth_header(Config) ->
     ),
     ok.
 
-get_user_not_found(Config) ->
+unknown_route_returns_404(Config) ->
     Url = url(Config, "/api/nonexistent"),
 
     ?assertMatch(
@@ -578,14 +581,24 @@ list_users_no_query_params(Config) ->
 list_users_with_query_params(Config) ->
     Url = url(Config, "/api/users?page=2&per_page=5"),
 
-    ?assertMatch(
-        {ok, {{_, 200, _}, _Headers, _ResponseBody}},
-        http_get(Url)
-    ),
+    {ok, {{_, 200, _}, _Headers, ResponseBody}} = http_get(Url),
+
+    %% Verify the decoded per_page value (integer 5) reached the handler —
+    %% list_users echoes it as total, confirming key matching and type decoding
+    ?assertMatch(#{~"total" := 5}, json:decode(list_to_binary(ResponseBody))),
     ok.
 
 list_users_invalid_query_param(Config) ->
     Url = url(Config, "/api/users?page=notanumber"),
+
+    ?assertMatch(
+        {ok, {{_, 400, _}, _Headers, _ResponseBody}},
+        http_get(Url)
+    ),
+    ok.
+
+search_users_missing_required_query_param(Config) ->
+    Url = url(Config, "/api/search"),
 
     ?assertMatch(
         {ok, {{_, 400, _}, _Headers, _ResponseBody}},
