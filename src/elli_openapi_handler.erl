@@ -23,8 +23,22 @@ handle(ElliRequest, _Args) ->
 
 -spec handle_event(Event, Args :: term(), Config) -> ok when
     Event :: elli_handler:event(),
-    Config :: [tuple()].
+    Config :: [tuple()] | {spectra_openapi:openapi_metadata(), [tuple()]}.
+handle_event(elli_startup, [], {MetaData, Routes}) when is_map(MetaData) ->
+    ensure_modules_loaded(Routes),
+    elli_openapi:setup_routes(MetaData, Routes),
+    ok;
 handle_event(elli_startup, [], Routes) ->
+    ensure_modules_loaded(Routes),
+    elli_openapi:setup_routes(Routes),
+    ok;
+handle_event(request_complete, [Req, ReturnCode, _, _, _], _Config) ->
+    io:format("Req complete: ~s ~p ~n", [elli_request:raw_path(Req), ReturnCode]),
+    ok;
+handle_event(_Event, _Data, _Config) ->
+    ok.
+
+ensure_modules_loaded(Routes) ->
     Modules =
         lists:map(
             fun({_, _, CallFun}) ->
@@ -33,11 +47,4 @@ handle_event(elli_startup, [], Routes) ->
             end,
             Routes
         ),
-    lists:foreach(fun code:ensure_loaded/1, lists:usort(Modules)),
-    elli_openapi:setup_routes(Routes),
-    ok;
-handle_event(request_complete, [Req, ReturnCode, _, _, _], _Config) ->
-    io:format("Req complete: ~s ~p ~n", [elli_request:raw_path(Req), ReturnCode]),
-    ok;
-handle_event(_Event, _Data, _Config) ->
-    ok.
+    lists:foreach(fun code:ensure_loaded/1, lists:usort(Modules)).
