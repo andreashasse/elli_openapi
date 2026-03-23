@@ -51,6 +51,9 @@ jobs:
       - name: Compile
         run: make compile
 
+      - name: Compile example
+        run: cd example && rebar3 compile
+
       - name: Run tests
         run: make test
 

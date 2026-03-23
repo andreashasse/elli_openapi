@@ -31,7 +31,7 @@ ElliOpts = [
 {ok, Pid} = elli:start_link(ElliOpts).
 ```
 
-See `src/elli_openapi_demo.erl` for example handler implementations.
+See the `example/` directory for a runnable example application with handler implementations.
 
 ## Handler Functions
 
@@ -73,13 +73,20 @@ To return different status codes from the same handler, use union types in your 
     | {404, Headers3, NotFoundBody}.
 ```
 
-For complete handler examples, see `src/elli_openapi_demo.erl`.
+For complete handler examples, see `example/src/elli_openapi_demo.erl`.
 
-## Demo
+## Example Application
 
-To try out the demo application:
+The `example/` directory contains a runnable demo application showcasing multiple handler implementations including user management, echo, status updates, and item updates with conflict detection.
+
+To run the example:
 
 ```bash
-rebar3 compile
+cd example
 rebar3 shell
 ```
+
+The demo starts on port 3000. Access the API documentation at:
+- Swagger UI: http://localhost:3000/swagger
+- ReDoc: http://localhost:3000/redoc
+- OpenAPI JSON: http://localhost:3000/api-docs
