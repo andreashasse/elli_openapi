@@ -52,7 +52,7 @@ jobs:
         run: make compile
 
       - name: Compile example
-        run: cd example && rebar3 compile
+        run: rebar3 as test compile
 
       - name: Run tests
         run: make test
