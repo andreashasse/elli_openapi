@@ -1,0 +1,5 @@
+{application, demo, [
+    {description, "elli_openapi example application"},
+    {vsn, "0.1.0"},
+    {applications, [kernel, stdlib, elli, elli_openapi]}
+]}.
