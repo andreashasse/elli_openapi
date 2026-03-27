@@ -8,7 +8,7 @@ This library is not ready for production use, but it wont take long to finish it
 
 ```erlang
 {deps, [
-    {elli_openapi, {git, "https://github.com/andreashasse/elli_openapi.git", {branch, "main"}}}
+    {elli_openapi, "~> 0.1.0"}
 ]}.
 ```
 
