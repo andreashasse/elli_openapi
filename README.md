@@ -82,8 +82,7 @@ The `example/` directory contains a runnable demo application showcasing multipl
 To run the example:
 
 ```bash
-cd example
-rebar3 shell
+make demo
 ```
 
 The demo starts on port 3000. Access the API documentation at:
