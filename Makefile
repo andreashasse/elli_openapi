@@ -1,4 +1,4 @@
-.PHONY: all compile format test cover clean doc hank format_verify build-test dialyzer xref type_check check_app_calls hex release
+.PHONY: all compile format test cover clean doc hank format_verify build-test dialyzer xref type_check check_app_calls hex release demo
 
 all: compile format test cover
 
@@ -46,6 +46,9 @@ check_app_calls:
 
 doc:
 	rebar3 ex_doc
+
+demo:
+	rebar3 as demo shell
 
 hex:
 	rebar3 hex build

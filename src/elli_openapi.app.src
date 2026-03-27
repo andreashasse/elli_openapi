@@ -1,6 +1,6 @@
 {application, elli_openapi, [
     {description, "OpenAPI in Elli using Spectra"},
-    {vsn, "0.1.0"},
+    {vsn, "0.1.1"},
     {registered, []},
     {applications, [kernel, stdlib, elli, spectra]},
     {env, []},

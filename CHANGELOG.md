@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] - 2026-03-27
+
+### Added
+- `make demo` target for running the example application locally
+
+### Changed
+- Demo application restructured as a proper OTP app in the `example/` directory, replacing the previous `demo.escript`
+
+### Fixed
+- Documentation improvements for handler spec placement and argument descriptions
+
 ## [0.1.0] - 2026-03-27
 
 ### Added
@@ -14,6 +25,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple HTTP status codes per endpoint via union types in function specs
 - Request and response body validation and encoding (JSON and text/plain)
 - Request header validation against declared function specs
-- Swagger UI served at `/api-docs`
-- Redoc UI served at `/redoc`
+- Swagger UI served at `/swagger`, ReDoc at `/redoc`, raw OpenAPI JSON at `/api-docs`
 - OpenAPI spec stored in `persistent_term` for fast in-memory access
