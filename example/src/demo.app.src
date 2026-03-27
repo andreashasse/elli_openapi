@@ -1,5 +1,6 @@
 {application, demo, [
     {description, "elli_openapi example application"},
     {vsn, "0.1.0"},
+    {mod, {demo_app, []}},
     {applications, [kernel, stdlib, elli, elli_openapi]}
 ]}.
