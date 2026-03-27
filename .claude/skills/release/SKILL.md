@@ -122,7 +122,7 @@ Then proceed based on the answer:
 
 ## Important Notes
 
-- Do NOT modify `src/elli_openapi.app.src` - it uses `{vsn, "git"}` which gets version from git tags
+- If `src/elli_openapi.app.src` uses a fixed version like `{vsn, "0.1.0"}`, update it to the new release version but do NOT change its versioning strategy (e.g. do not switch it to `{vsn, "git"}`) unless explicitly instructed by the user
 - Do NOT modify `rebar.config` - it doesn't contain version information
 - Do NOT run `make release` - the user will do that after the PR is merged
 - Try to write clear, user-focused changelog entries
