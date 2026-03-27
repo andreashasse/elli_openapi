@@ -106,6 +106,8 @@ some_other_function() -> ...
 create_user(...) -> ...
 ```
 
+Handler specs use Spectra's type system. See the [Spectra documentation](https://hexdocs.pm/spectra/readme.html) for supported types and serialization rules.
+
 For complete handler examples, see `example/src/elli_openapi_demo.erl`.
 
 ## Example Application
