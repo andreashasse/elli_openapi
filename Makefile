@@ -1,4 +1,4 @@
-.PHONY: all compile format test cover clean doc hank format_verify build-test dialyzer xref type_check check_app_calls hex
+.PHONY: all compile format test cover clean doc hank format_verify build-test dialyzer xref type_check check_app_calls hex release
 
 all: compile format test cover
 
@@ -50,3 +50,33 @@ doc:
 hex:
 	rebar3 hex build
 	rebar3 hex publish
+
+release:
+	@branch=$$(git rev-parse --abbrev-ref HEAD); \
+	if [ "$$branch" != "main" ]; then \
+		echo "Error: You must be on the main branch to release (currently on '$$branch')."; \
+		exit 1; \
+	fi
+	@git fetch origin main --quiet
+	@if [ "$$(git rev-parse HEAD)" != "$$(git rev-parse origin/main)" ]; then \
+		echo "Error: Local main is not in sync with origin/main. Please pull or push first."; \
+		git status -sb; \
+		exit 1; \
+	fi
+	@if [ -n "$$(git status --porcelain)" ]; then \
+		echo "Error: There are uncommitted changes. Please commit or stash them before releasing."; \
+		git status --short; \
+		exit 1; \
+	fi
+	@echo "Last 5 tags:"
+	@git tag --sort=-version:refname | head -n 5
+	@echo ""
+	@read -r -p "Enter the next tag (e.g., v1.0.0): " tag && [ -n "$$tag" ] || { echo "Tag cannot be empty. Aborted."; exit 1; }; \
+	read -r -p "Did you update the README install instructions _AND_ CHANGELOG.md? (Y/N) " a && [ "$$a" = "Y" ] || { echo "Aborted."; exit 1; }; \
+	git tag "$$tag" && \
+	rebar3 compile && \
+	rebar3 hex build && \
+	rebar3 hex publish && \
+	git push origin "$$tag" && \
+	gh release create "$$tag" --title "v$$tag" --notes "$$(sed -n "/## \[$$tag\]/,/## \[/p" CHANGELOG.md | sed '$$d' | tail -n +2)" && \
+	echo "Released and tagged as $$tag"
