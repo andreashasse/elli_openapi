@@ -110,6 +110,10 @@ Handler specs use Spectra's type system. See the [Spectra documentation](https:/
 
 For complete handler examples, see `example/src/elli_openapi_demo.erl`.
 
+## How Routing Works
+
+Routes are compiled into [ETS match specifications](https://www.erlang.org/doc/apps/erts/match_spec.html) at startup. Each path template like `<<"/api/users/{userId}">>` is translated into a match spec pattern where `{userId}` becomes a match variable. At request time, the incoming path is converted to a tuple of segments and dispatched with a single `ets:match_spec_run/2` call, which simultaneously selects the correct handler and extracts all path variable bindings — using the VM's native pattern-matching engine rather than iterating over a list of routes.
+
 ## Example Application
 
 The `example/` directory contains a runnable demo application showcasing multiple handler implementations including user management, echo, status updates, and item updates with conflict detection.
