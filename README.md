@@ -8,7 +8,7 @@ This library is not ready for production use, but it wont take long to finish it
 
 ```erlang
 {deps, [
-    {elli_openapi, "~> 0.1.0"}
+    {elli_openapi, "~> 0.1.1"}
 ]}.
 ```
 
