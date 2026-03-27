@@ -14,6 +14,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for multiple HTTP status codes per endpoint via union types in function specs
 - Request and response body validation and encoding (JSON and text/plain)
 - Request header validation against declared function specs
-- Swagger UI served at `/api-docs`
-- Redoc UI served at `/redoc`
+- Swagger UI served at `/swagger`, ReDoc at `/redoc`, raw OpenAPI JSON at `/api-docs`
 - OpenAPI spec stored in `persistent_term` for fast in-memory access
